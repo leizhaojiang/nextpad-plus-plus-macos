@@ -7448,16 +7448,11 @@ static NSArray<NSDictionary *> *convertRecordedToXmlFormat(NSArray<NSDictionary 
     if (!path.length || line <= 0) return;
     [self openFileAtPath:path];
     EditorView *ed = [self currentEditor];
-    if (ed && line > 0) {
-        [ed goToLineNumber:line];
-        // Highlight the line
-        ScintillaView *sci = ed.scintillaView;
-        sptr_t lineIdx = line - 1;
-        sptr_t lineStart = [sci message:SCI_POSITIONFROMLINE wParam:(uptr_t)lineIdx];
-        sptr_t lineEnd   = [sci message:SCI_GETLINEENDPOSITION wParam:(uptr_t)lineIdx];
-        [sci message:SCI_SETSEL wParam:(uptr_t)lineStart lParam:lineEnd];
-        [sci message:SCI_SCROLLCARET];
-    }
+    // goToLineNumber: centres the line, selects it, and leaves the caret at
+    // column 1 with the horizontal offset reset — the whole-line selection that
+    // used to be repeated here left the caret at the line END, which scrolled
+    // long result lines to their tail.
+    if (ed && line > 0) [ed goToLineNumber:line];
 }
 
 - (void)searchResultsPanelDidRequestClose:(SearchResultsPanel *)panel {

@@ -3633,10 +3633,17 @@ static const unsigned int kSCI_SetRectSelAnchor          = 2590;
     if (topLine < 0) topLine = 0;
     [sci message:SCI_SETFIRSTVISIBLELINE wParam:(uptr_t)topLine];
 
-    // Select the entire line (highlight it)
+    // Select the entire line (highlight it). Anchor at the END and caret at the
+    // START: SCI_SETSEL puts the caret at lParam, and every caller — search
+    // results, function list, -n CLI, find navigation — expects to land at
+    // column 1. With the caret at the line end, SCI_SCROLLCARET dragged long
+    // lines to their tail instead (and the results panel could not scroll back).
     sptr_t lineStart = [sci message:SCI_POSITIONFROMLINE wParam:(uptr_t)line0];
     sptr_t lineEnd   = [sci message:SCI_GETLINEENDPOSITION wParam:(uptr_t)line0];
-    [sci message:SCI_SETSEL wParam:(uptr_t)lineStart lParam:lineEnd];
+    [sci message:SCI_SETSEL wParam:(uptr_t)lineEnd lParam:(sptr_t)lineStart];
+    // SCROLLCARET only reveals the caret; when it is already visible it leaves
+    // the horizontal offset alone, so reset it explicitly to show the line start.
+    [sci message:SCI_SETXOFFSET wParam:0];
     [sci message:SCI_SCROLLCARET];
 }
 
