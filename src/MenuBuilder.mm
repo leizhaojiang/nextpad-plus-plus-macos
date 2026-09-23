@@ -753,6 +753,28 @@ static NSMenu *buildLanguageMenu() {
     langMenuTop.submenu = buildLanguageMenu();
     langMenuTop.submenu.title = @"Language";
 
+    // ── Settings ──────────────────────────────────────────────────────────────
+    // Restored as a top-level menu (the macOS-HIG reorg had folded these into
+    // the app menu / View > Appearance / Edit). The commands also stay at their
+    // HIG locations, so both routes work; the title and the Import submenu have
+    // nativeLang entries ("settings" / "settings-import") and translate with the
+    // rest of the UI.
+    NSMenuItem *settingsItem = [[NSMenuItem alloc] init];
+    [main addItem:settingsItem];
+    NSMenu *settingsMenu = submenu(@"Settings");
+    settingsItem.submenu = settingsMenu;
+
+    [settingsMenu addItem:item(@"Preferences…", @selector(showPreferences:), @",")];
+    [settingsMenu addItem:item(@"Style Configurator…", @selector(showStyleConfigurator:), @"")];
+    [settingsMenu addItem:item(@"Shortcut Mapper…", @selector(showShortcutMapper:), @"")];
+    addSep(settingsMenu);
+    NSMenu *importMenu = submenu(@"Import");
+    [importMenu addItem:item(@"Import Plugin(s)…", @selector(importPlugin:), @"")];
+    [importMenu addItem:item(@"Import Style Theme(s)…", @selector(importStyleTheme:), @"")];
+    [settingsMenu addItem:withSubmenu(@"Import", importMenu)];
+    addSep(settingsMenu);
+    [settingsMenu addItem:item(@"Edit Popup ContextMenu", @selector(editPopupContextMenu:), @"")];
+
     // ── Macro ─────────────────────────────────────────────────────────────────
     NSMenuItem *macroItem = [[NSMenuItem alloc] init];
     macroItem.tag = kMenuTagMacro; // used by rebuildMacroMenu to find this menu

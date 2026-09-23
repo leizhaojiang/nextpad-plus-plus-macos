@@ -61,6 +61,9 @@ Both big controllers have `#pragma mark` section maps — use them instead of re
 **Performance**
 - `SCN_UPDATEUI` runs on every scroll / cursor / content tick: keep per-update work bounded to the visible viewport. `updateSmartHighlight` and `updateClickableLinks` are the models — both bound their scan (NPP parity: `SmartHighlighter.cpp` scans visible lines only, `MAXLINEHIGHLIGHT 400`). A whole-document scan here costs hundreds of ms per scroll frame on a 50 MB log. See `docs/PROJECT_SCAN.md` §5.5 for measurements and the re-measure recipe.
 
+**Menus**
+- The `Settings` top-level menu (Preferences / Style Configurator / Shortcut Mapper / Import / Edit Popup ContextMenu) is **intentionally duplicated**: it was restored on user request on top of the macOS-HIG layout (`f517dc6` dropped the standalone Settings/Encoding/Tools menus). The HIG locations keep their copies — app menu, `View > Appearance`, `Edit`, `Plugins`. Do not deduplicate without asking. The title and the Import submenu translate via nativeLang `menuId "settings"` / `subMenuId "settings-import"`.
+
 **Search results panel**
 - Double-clicking a result calls `MainWindowController searchResultsPanel:navigateToFile:atLine:matchText:matchCase:` → `EditorView -goToLineNumber:`, which must leave the **caret at column 1** (reversed selection: anchor at the line end, caret at the line start) and reset `xOffset` to 0. The unreversed selection it used to do put the caret at the line end, so `SCI_SCROLLCARET` dragged long log lines to their tail.
 - `NPPSearchResult.matchStart/matchLength` are **UTF-8 byte offsets** (NPP's `start_mark = targetStart - lstart`). `SearchEngine` normalises every producer to bytes (`nppByteRangeForCharRange` for `NSRegularExpression`/`-rangeOfString` results); never treat them as character indices.
