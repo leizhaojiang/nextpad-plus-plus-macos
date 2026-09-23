@@ -93,19 +93,20 @@ typedef NS_ENUM(NSInteger, NPPSearchDir) {
 
 /// Recursive directory search. Calls progressBlock on main thread with current file and running count.
 /// Set *cancelFlag to YES to abort. Returns array of NPPFileResults.
-/// totalFilesScanned (optional out): total number of files examined.
+/// cancelFlag and totalFilesScanned are optional (pass NULL when not needed).
 + (NSArray<NPPFileResults *> *)findInDirectory:(NSString *)directory
                                        options:(NPPFindOptions *)opts
                                  progressBlock:(nullable void(^)(NSString *currentFile, NSInteger hits))progressBlock
-                                    cancelFlag:(BOOL *)cancelFlag
+                                    cancelFlag:(nullable BOOL *)cancelFlag
                             totalFilesScanned:(nullable NSInteger *)totalFilesScanned;
 
 /// Search within a specific list of file paths (for Find in Projects).
 /// Applies file filters from opts.filters. Returns array of NPPFileResults.
+/// cancelFlag and totalFilesScanned are optional (pass NULL when not needed).
 + (NSArray<NPPFileResults *> *)findInFilePaths:(NSArray<NSString *> *)filePaths
                                        options:(NPPFindOptions *)opts
                                  progressBlock:(nullable void(^)(NSString *currentFile, NSInteger hits))progressBlock
-                                    cancelFlag:(BOOL *)cancelFlag
+                                    cancelFlag:(nullable BOOL *)cancelFlag
                             totalFilesScanned:(nullable NSInteger *)totalFilesScanned;
 
 @end

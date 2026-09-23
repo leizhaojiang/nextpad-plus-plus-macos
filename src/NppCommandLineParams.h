@@ -42,7 +42,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, copy, readonly) NSArray<NSString *> *filePaths;
 
 /// Parse command line arguments. Call from main() before NSApplication runs.
-- (instancetype)initWithArgc:(int)argc argv:(const char **)argv;
+/// argv is the raw C argv (never NULL elements for the first argc entries).
+- (instancetype)initWithArgc:(int)argc argv:(const char * _Nullable * _Nonnull)argv;
 
 /// Returns YES if any CLI arguments were provided (beyond the program name).
 @property (nonatomic, readonly) BOOL hasArguments;

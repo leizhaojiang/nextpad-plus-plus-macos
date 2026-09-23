@@ -1,5 +1,7 @@
 #import <Cocoa/Cocoa.h>
 
+NS_ASSUME_NONNULL_BEGIN
+
 @class MainWindowController;
 @class NppCommandLineParams;
 
@@ -32,3 +34,5 @@
 - (void)checkForUpdates:(id)sender;
 
 @end
+
+NS_ASSUME_NONNULL_END

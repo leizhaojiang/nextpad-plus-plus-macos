@@ -209,8 +209,8 @@ extern NSNotificationName const EditorViewZoomDidChangeNotification;
 - (void)clearReadOnlyFlag:(id)sender;
 
 // ── Text direction ────────────────────────────────────────────────────────────
-- (void)setTextDirectionRTL:(id)sender;
-- (void)setTextDirectionLTR:(id)sender;
+- (void)setTextDirectionRTL:(nullable id)sender;
+- (void)setTextDirectionLTR:(nullable id)sender;
 @property (nonatomic, readonly) BOOL isTextDirectionRTL;
 
 // ── View toggles ─────────────────────────────────────────────────────────────
@@ -323,7 +323,7 @@ extern NSNotificationName const EditorViewZoomDidChangeNotification;
 // ── Auto-Completion (explicit menu triggers) ─────────────────────────────────
 - (void)triggerFunctionCompletion:(id)sender;
 - (void)triggerWordCompletion:(id)sender;
-- (void)triggerFunctionParametersHint:(id)sender;
+- (void)triggerFunctionParametersHint:(nullable id)sender;
 - (void)showFunctionParametersPreviousHint:(id)sender;
 - (void)showFunctionParametersNextHint:(id)sender;
 - (void)triggerPathCompletion:(id)sender;
@@ -415,4 +415,4 @@ NS_ASSUME_NONNULL_END
 ///
 /// Exposed so the Shortcut Mapper can show what the editor really does rather than
 /// keeping a second, hand-maintained copy of the defaults that can drift from it.
-int NppScintillaDefaultKeyCombos(int sciID, int *combos, int maxCombos);
+int NppScintillaDefaultKeyCombos(int sciID, int * _Nonnull combos, int maxCombos);

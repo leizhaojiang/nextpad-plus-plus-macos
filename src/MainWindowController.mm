@@ -5488,10 +5488,14 @@ static NSArray<NSDictionary *> *convertRecordedToXmlFormat(NSArray<NSDictionary 
 
         // Walk all menus checking for conflicts
         NSMutableString *msg = [NSMutableString string];
-        __block void (^checkMenuBlock)(NSMenu *, NSString *);
-        checkMenuBlock = ^(NSMenu *menu, NSString *cat) {
+        // Weak alias for the recursive call: a __block block that captures
+        // itself stays retained forever (retain cycle), so recurse through a
+        // weak reference instead.
+        __weak void (^weakCheckMenuBlock)(NSMenu *, NSString *);
+        void (^checkMenuBlock)(NSMenu *, NSString *);
+        weakCheckMenuBlock = checkMenuBlock = ^(NSMenu *menu, NSString *cat) {
             for (NSMenuItem *mi in menu.itemArray) {
-                if (mi.submenu) { checkMenuBlock(mi.submenu, cat); continue; }
+                if (mi.submenu) { weakCheckMenuBlock(mi.submenu, cat); continue; }
                 if (!mi.action || !mi.keyEquivalent.length) continue;
                 NSEventModifierFlags m = mi.keyEquivalentModifierMask;
                 BOOL mCmd = (m & NSEventModifierFlagCommand) != 0;
@@ -9433,10 +9437,14 @@ typedef NS_ENUM(NSInteger, NppBatchCloseDecision) {
         }
 
         NSMutableString *msg = [NSMutableString string];
-        __block void (^checkMenuBlock)(NSMenu *, NSString *);
-        checkMenuBlock = ^(NSMenu *menu, NSString *cat) {
+        // Weak alias for the recursive call: a __block block that captures
+        // itself stays retained forever (retain cycle), so recurse through a
+        // weak reference instead.
+        __weak void (^weakCheckMenuBlock)(NSMenu *, NSString *);
+        void (^checkMenuBlock)(NSMenu *, NSString *);
+        weakCheckMenuBlock = checkMenuBlock = ^(NSMenu *menu, NSString *cat) {
             for (NSMenuItem *mi in menu.itemArray) {
-                if (mi.submenu) { checkMenuBlock(mi.submenu, cat); continue; }
+                if (mi.submenu) { weakCheckMenuBlock(mi.submenu, cat); continue; }
                 if (!mi.action || !mi.keyEquivalent.length) continue;
                 NSEventModifierFlags m = mi.keyEquivalentModifierMask;
                 BOOL mCmd = (m & NSEventModifierFlagCommand) != 0;
