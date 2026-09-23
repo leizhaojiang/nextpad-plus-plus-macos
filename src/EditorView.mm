@@ -3824,7 +3824,6 @@ static const int kIndicatorIncSearch = 28; // Scintilla indicator slot for incre
     if (![[NSUserDefaults standardUserDefaults] boolForKey:kPrefSmartHighlight]) return;
 
     // Performance pref — skip smart highlight for large files unless explicitly allowed.
-    // Walking a multi-million-line buffer for selection-text matches dominates wall time.
     if (_largeFileMode &&
         ![[NSUserDefaults standardUserDefaults] boolForKey:kPrefLargeFileAllowSmartHilite]) return;
 
@@ -3855,11 +3854,38 @@ static const int kIndicatorIncSearch = 28; // Scintilla indicator slot for incre
         [sci message:SCI_SETSEARCHFLAGS wParam:(uptr_t)flags];
     }
 
+    // ── Mark occurrences on the visible lines only ───────────────────────────
+    // Windows NPP bounds its SmartHighlighter the same way
+    // (SmartHighlighter::highlightViewWithWord — "Get the range of text
+    // visible and highlight everything in it", with MAXLINEHIGHLIGHT capping
+    // very tall viewports). Walking the whole document instead costs hundreds
+    // of milliseconds per SCN_UPDATEUI on a multi-megabyte log — i.e. a frozen
+    // UI on every scroll tick while a word is selected — and a mark outside
+    // the viewport is invisible anyway. SCI_DOCLINEFROMVISIBLE keeps the range
+    // correct under word wrap and folding.
+    static const sptr_t kMaxSmartHighlightLines = 400; // NPP MAXLINEHIGHLIGHT
+    sptr_t firstVisible  = [sci message:SCI_GETFIRSTVISIBLELINE];
+    sptr_t linesOnScreen = [sci message:SCI_LINESONSCREEN];
+    sptr_t nLines        = MIN(linesOnScreen, kMaxSmartHighlightLines) + 1;
+    sptr_t docFirst = [sci message:SCI_DOCLINEFROMVISIBLE wParam:(uptr_t)firstVisible];
+    sptr_t docLast  = [sci message:SCI_DOCLINEFROMVISIBLE
+                                 wParam:(uptr_t)(firstVisible + nLines)];
+    if (docFirst < 0) return;
     sptr_t docLen = [sci message:SCI_GETLENGTH];
-    sptr_t pos = 0;
-    while (pos < docLen) {
+    sptr_t visStart = [sci message:SCI_POSITIONFROMLINE wParam:(uptr_t)docFirst];
+    sptr_t visEnd   = (docLast >= 0)
+                        ? [sci message:SCI_GETLINEENDPOSITION wParam:(uptr_t)docLast]
+                        : docLen;
+    if (visEnd <= visStart) return;
+
+    // Find/Replace keeps state in the target range — restore it afterwards.
+    sptr_t savedTargetStart = [sci message:SCI_GETTARGETSTART];
+    sptr_t savedTargetEnd   = [sci message:SCI_GETTARGETEND];
+
+    sptr_t pos = visStart;
+    while (pos < visEnd) {
         [sci message:SCI_SETTARGETSTART wParam:(uptr_t)pos];
-        [sci message:SCI_SETTARGETEND   wParam:(uptr_t)docLen];
+        [sci message:SCI_SETTARGETEND   wParam:(uptr_t)visEnd];
         sptr_t found = [sci message:SCI_SEARCHINTARGET wParam:(uptr_t)needleLen lParam:(sptr_t)needle];
         if (found < 0) break;
         sptr_t foundEnd = [sci message:SCI_GETTARGETEND];
@@ -3867,6 +3893,9 @@ static const int kIndicatorIncSearch = 28; // Scintilla indicator slot for incre
             [sci message:SCI_INDICATORFILLRANGE wParam:(uptr_t)found lParam:foundEnd - found];
         pos = foundEnd;
     }
+
+    [sci message:SCI_SETTARGETSTART wParam:(uptr_t)savedTargetStart];
+    [sci message:SCI_SETTARGETEND   wParam:(uptr_t)savedTargetEnd];
 }
 
 #pragma mark - Clickable Links (issue #133)
