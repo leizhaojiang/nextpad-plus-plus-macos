@@ -18,6 +18,56 @@ static int kRegexEmptyFlagsFindNext      = SCFIND_REGEXP_EMPTYMATCH_ALL | SCFIND
 static int kRegexEmptyFlagsFindForReplace = SCFIND_REGEXP_EMPTYMATCH_ALL | SCFIND_REGEXP_EMPTYMATCH_ALLOWATSTART | SCFIND_REGEXP_SKIPCRLFASONE;
 static int kRegexEmptyFlagsLoopOp        = SCFIND_REGEXP_EMPTYMATCH_NOTAFTERMATCH | SCFIND_REGEXP_SKIPCRLFASONE;
 
+/// Convert a UTF-16 character range (what NSRegularExpression / -rangeOfString
+/// return) into the UTF-8 BYTE range that NPPSearchResult documents and that
+/// the search-results lexer consumes. Windows NPP stores byte offsets the same
+/// way (start_mark = targetStart - lstart); mixing the two coordinate systems
+/// mis-highlights every line whose match follows a multibyte character.
+static void nppByteRangeForCharRange(NSRange charRange, NSString *line,
+                                     NSInteger *outStart, NSInteger *outLength) {
+    NSUInteger loc = MIN(charRange.location, line.length);
+    NSUInteger len = MIN(charRange.length, line.length - loc);
+    if (charRange.location == NSNotFound) {
+        loc = 0;
+        len = 0;
+    }
+    NSString *prefix = [line substringToIndex:loc];
+    NSString *match  = [line substringWithRange:NSMakeRange(loc, len)];
+    *outStart  = (NSInteger)[prefix lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+    *outLength = (NSInteger)[match  lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+}
+
+/// Read a file for searching. Strict UTF-8 first; when that fails, ask the
+/// system charset detector (GBK/GB18030, Big5, Shift-JIS, …); finally fall back
+/// to a lossy UTF-8 decode. Windows NPP searches non-UTF-8 files too — a single
+/// invalid byte must not make a whole file invisible to Find in Files (the old
+/// `encoding:NSUTF8StringEncoding; if (!content) continue;` did exactly that).
+static NSString *nppSearchableFileContents(NSString *full) {
+    NSData *data = [NSData dataWithContentsOfFile:full];
+    if (!data.length) return nil;
+
+    NSString *content = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    if (content) return content;
+
+    // Let the system decide (covers the CJK encodings the old code skipped).
+    NSString *detected = nil;
+    [NSString stringEncodingForData:data encodingOptions:nil
+                    convertedString:&detected usedLossyConversion:NULL];
+    if (detected.length) return detected;
+
+    // Guaranteed fallback: lossy UTF-8 (invalid bytes become U+FFFD) so the
+    // file is still searchable.
+    NSDictionary *lossyUTF8 = @{
+        NSStringEncodingDetectionSuggestedEncodingsKey: @[ @(NSUTF8StringEncoding) ],
+        NSStringEncodingDetectionUseOnlySuggestedEncodingsKey: @YES,
+        NSStringEncodingDetectionAllowLossyKey: @YES,
+    };
+    detected = nil;
+    [NSString stringEncodingForData:data encodingOptions:lossyUTF8
+                    convertedString:&detected usedLossyConversion:NULL];
+    return detected.length ? detected : nil;
+}
+
 /// Expand Scintilla replacement tags (\0 through \9) for one regex match.
 /// All other characters, including backslashes, remain literal.
 static NSString *nppRegexReplacement(NSString *replacement,
@@ -611,9 +661,9 @@ static NSString *nppRegexReplacement(NSString *replacement,
 
         filesScanned++;
 
-        // Read file
-        NSString *content = [NSString stringWithContentsOfFile:full
-                                                     encoding:NSUTF8StringEncoding error:nil];
+        // Read file (strict UTF-8 → charset detection → lossy UTF-8; a single
+        // invalid byte must not hide the whole file from search).
+        NSString *content = nppSearchableFileContents(full);
         if (!content) continue;
 
         NSArray<NSString *> *lines = [content componentsSeparatedByString:@"\n"];
@@ -659,8 +709,10 @@ static NSString *nppRegexReplacement(NSString *replacement,
             r.filePath    = full;
             r.lineNumber  = ln + 1;
             r.lineText    = line;
-            r.matchStart  = (NSInteger)range.location;
-            r.matchLength = (NSInteger)range.length;
+            NSInteger byteStart = 0, byteLen = 0;
+            nppByteRangeForCharRange(range, line, &byteStart, &byteLen);
+            r.matchStart  = byteStart;
+            r.matchLength = byteLen;
             [fileRes.results addObject:r];
         }
 
@@ -739,9 +791,9 @@ static NSString *nppRegexReplacement(NSString *replacement,
 
         filesScanned++;
 
-        // Read file
-        NSString *content = [NSString stringWithContentsOfFile:full
-                                                     encoding:NSUTF8StringEncoding error:nil];
+        // Read file (strict UTF-8 → charset detection → lossy UTF-8; a single
+        // invalid byte must not hide the whole file from search).
+        NSString *content = nppSearchableFileContents(full);
         if (!content) continue;
 
         NSArray<NSString *> *lines = [content componentsSeparatedByString:@"\n"];
@@ -787,8 +839,10 @@ static NSString *nppRegexReplacement(NSString *replacement,
             r.filePath    = full;
             r.lineNumber  = ln + 1;
             r.lineText    = line;
-            r.matchStart  = (NSInteger)range.location;
-            r.matchLength = (NSInteger)range.length;
+            NSInteger byteStart = 0, byteLen = 0;
+            nppByteRangeForCharRange(range, line, &byteStart, &byteLen);
+            r.matchStart  = byteStart;
+            r.matchLength = byteLen;
             [fileRes.results addObject:r];
         }
 

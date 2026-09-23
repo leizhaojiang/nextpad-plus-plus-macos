@@ -150,6 +150,15 @@ struct _SRLineInfo {
     [_sci message:SCI_SETMARGINWIDTHN wParam:0 lParam:0];
     [_sci message:SCI_SETMARGINWIDTHN wParam:1 lParam:0];
 
+    // Horizontal scrolling must follow the longest result line. Scintilla's
+    // default scroll width is a fixed 2000px, which silently clamps long log
+    // lines — the bottom scrollbar stops dragging partway through the line.
+    // Windows NPP sets exactly this pair at view init
+    // (ScintillaEditView.cpp: SCI_SETSCROLLWIDTHTRACKING(true); SCI_SETSCROLLWIDTH(1)),
+    // and our EditorView does the same (EditorView.mm applyDefaultTheme).
+    [_sci message:SCI_SETSCROLLWIDTHTRACKING wParam:1];
+    [_sci message:SCI_SETSCROLLWIDTH wParam:1];
+
     // No caret line highlight by default
     [_sci message:SCI_SETCARETLINEVISIBLE wParam:1];
 
@@ -321,7 +330,12 @@ struct _SRLineInfo {
 
 /// Convert NSColor to Scintilla BGR integer.
 static sptr_t _srSciColor(NSColor *c) {
-    c = [c colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
+    // Must match ScintillaView's -setColorProperty:parameter:value: (used by
+    // EditorView for the same theme colours): that converts to DEVICE RGB
+    // before reading components. Converting to genericRGB instead (as this
+    // helper used to) yields different integers for the same theme colour, so
+    // the results panel rendered a different shade than the editor.
+    c = [c colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
     if (!c) return 0;
     long r = (long)([c redComponent]   * 255);
     long g = (long)([c greenComponent] * 255);
@@ -373,6 +387,26 @@ static sptr_t _srSciColor(NSColor *c) {
     sptr_t caretBg = dark ? 0x404040 : 0xE8E8E8;
     [_sci message:SCI_STYLESETBACK  wParam:SCE_SEARCHRESULT_CURRENT_LINE lParam:caretBg];
     [_sci message:SCI_SETCARETLINEBACK wParam:caretBg];
+
+    // ── Result styles from the active style theme ────────────────────────
+    // The palette above is only a fallback. The searchResult lexer is defined
+    // in stylers.xml / every theme like any other language, so whatever the
+    // user configures in the Style Configurator (or a non-default theme) must
+    // win — that is what the editor shows. Applied after the defaults, so a
+    // theme that omits an entry keeps the fallback value.
+    for (NPPStyleEntry *e in [store stylesForLexer:@"searchResult"]) {
+        int sid = e.styleID;
+        if (sid < 0 || sid > SCE_SEARCHRESULT_CURRENT_LINE || sid == 5) continue; // 5 = unused (HIGHLIGHT_LINE)
+        if (e.fgColor) [_sci message:SCI_STYLESETFORE wParam:(uptr_t)sid lParam:_srSciColor(e.fgColor)];
+        if (e.bgColor) {
+            sptr_t bgVal = _srSciColor(e.bgColor);
+            [_sci message:SCI_STYLESETBACK wParam:(uptr_t)sid lParam:bgVal];
+            if (sid == SCE_SEARCHRESULT_CURRENT_LINE)
+                [_sci message:SCI_SETCARETLINEBACK wParam:bgVal];
+        }
+        [_sci message:SCI_STYLESETBOLD   wParam:(uptr_t)sid lParam:e.bold   ? 1 : 0];
+        [_sci message:SCI_STYLESETITALIC wParam:(uptr_t)sid lParam:e.italic ? 1 : 0];
+    }
 
     // EOL-filled for headers
     [_sci message:SCI_STYLESETEOLFILLED wParam:SCE_SEARCHRESULT_FILE_HEADER lParam:1];
@@ -555,28 +589,50 @@ static sptr_t _srSciColor(NSColor *c) {
         for (NPPSearchResult *r in fileRes.results) {
             // Result line: \tLine NNNN: text\n
             NSString *linePrefix = [NSString stringWithFormat:@"\tLine %6ld: ", (long)r.lineNumber];
-            NSString *resultLine = [NSString stringWithFormat:@"%@%@\n", linePrefix, r.lineText];
+            size_t prefixBytes = strlen(linePrefix.UTF8String);
 
-            // Calculate marking position for highlighted match
-            const char *prefixUTF8 = linePrefix.UTF8String;
-            size_t prefixBytes = strlen(prefixUTF8);
+            // NPP truncates result lines to the search-result lexer's line buffer
+            // (SC_SEARCHRESULT_LINEBUFFERMAXLENGTH - 4, Scintilla.h). Appending a
+            // longer line makes the lexer split it: the continuation is
+            // reclassified as a header and the marking is re-painted at bogus
+            // offsets (measured: a duplicate mark at +2048 on a long log line).
+            // Truncate on a UTF-8 character boundary so every appended line stays
+            // one lexer line.
+            static const NSUInteger kSearchResultLineBufferMax = 2048; // SC_SEARCHRESULT_LINEBUFFERMAXLENGTH
+            NSUInteger budget = kSearchResultLineBufferMax - 4;
+            NSUInteger allowedTextBytes = budget > prefixBytes ? budget - prefixBytes : 0;
 
-            // Convert character-based matchStart to byte offset in lineText
-            NSString *beforeMatch = [r.lineText substringToIndex:MIN((NSUInteger)r.matchStart, r.lineText.length)];
-            size_t matchByteStart = strlen(beforeMatch.UTF8String);
-            NSString *matchStr = @"";
-            if (r.matchStart + r.matchLength <= (NSInteger)r.lineText.length)
-                matchStr = [r.lineText substringWithRange:NSMakeRange(r.matchStart, r.matchLength)];
-            size_t matchByteLen = strlen(matchStr.UTF8String);
+            NSString *text = r.lineText ?: @"";
+            NSUInteger textBytes = [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+            if (textBytes > allowedTextBytes) {
+                NSUInteger end = text.length;
+                while (textBytes > allowedTextBytes && end > 0) {
+                    NSRange last = [text rangeOfComposedCharacterSequenceAtIndex:end - 1];
+                    textBytes -= [[text substringWithRange:last]
+                                     lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+                    end = last.location;
+                }
+                text = [text substringToIndex:end];
+            }
 
+            NSString *resultLine = [NSString stringWithFormat:@"%@%@\n", linePrefix, text];
+
+            // matchStart/matchLength are UTF-8 byte offsets (NPP convention:
+            // start_mark = targetStart - lstart; SearchEngine normalises every
+            // producer to bytes). Treating them as character indices — as this
+            // code used to — over-highlights any line whose match follows a
+            // multibyte character. A match past the truncation point cannot be
+            // shown, so it gets no marking (NPP: "The occurrence is NOT
+            // displayed in the line").
             SearchResultMarkingLine marking = {};
-            if (matchByteLen > 0) {
+            if (r.matchStart >= 0 && r.matchLength > 0 &&
+                (NSUInteger)r.matchStart + (NSUInteger)r.matchLength <= textBytes) {
                 // LexSearchResult: ColourTo(startLine + mi.first - 1, DEFAULT) then
                 // ColourTo(startLine + mi.second - 1, WORD2SEARCH).
                 // So mi.first = offset of first highlighted byte (0-based within line buffer)
                 // and mi.second = offset of last highlighted byte + 1
-                intptr_t segStart = (intptr_t)(prefixBytes + matchByteStart);
-                intptr_t segEnd   = (intptr_t)(prefixBytes + matchByteStart + matchByteLen);
+                intptr_t segStart = (intptr_t)(prefixBytes + (NSUInteger)r.matchStart);
+                intptr_t segEnd   = (intptr_t)(prefixBytes + (NSUInteger)r.matchStart + (NSUInteger)r.matchLength);
                 marking._segmentPostions.push_back(std::make_pair(segStart, segEnd));
             }
             _markingLines.push_back(marking);
@@ -779,9 +835,23 @@ static sptr_t _srSciColor(NSColor *c) {
 }
 
 - (void)_copy:(id)sender {
-    // Copy only visible lines in selection
+    // Respect the actual selection: copying a partial selection must copy just
+    // that text, not the whole line (issue: "复制会复制整行"). The line-based
+    // walk below stays for the no-selection case, where it skips hidden/filtered
+    // lines — that behaviour is what the ⌘C interceptor was built for.
     sptr_t selStart = [_sci message:SCI_GETSELECTIONSTART];
     sptr_t selEnd   = [_sci message:SCI_GETSELECTIONEND];
+    if (selEnd > selStart) {
+        NSString *selected = _sci.selectedString;
+        if (selected.length) {
+            [[NSPasteboard generalPasteboard] clearContents];
+            [[NSPasteboard generalPasteboard] setString:selected
+                                                 forType:NSPasteboardTypeString];
+            return;
+        }
+    }
+
+    // No selection — copy only visible lines in the caret's line range.
     sptr_t lineStart = [_sci message:SCI_LINEFROMPOSITION wParam:(uptr_t)selStart];
     sptr_t lineEnd   = [_sci message:SCI_LINEFROMPOSITION wParam:(uptr_t)selEnd];
 

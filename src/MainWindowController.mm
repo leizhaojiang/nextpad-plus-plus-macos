@@ -100,6 +100,12 @@ static NSString *nppBackupDir(void) {
 static NSString *nppSessionPath(void) {
     return [nppConfigDir() stringByAppendingPathComponent:@"session.plist"];
 }
+
+// Height (points) of the expanded search-results panel. Persisted through
+// config.xml as <GUIConfig name="DockingManager" bottomHeight="…">, the same
+// slot Windows NPP uses for its docked finder panel, so the panel keeps the
+// size the user dragged it to across sessions.
+static NSString * const kPrefSearchResultsHeight = @"SearchResultsPanelHeight";
 // Forward declarations for shortcuts.xml functions (defined after @implementation)
 static NSString *nppShortcutsPath(void);
 // Non-static so NPPBatchDialog can link against it. Forward-declared here for
@@ -519,6 +525,14 @@ void writeConfigXML(void) {
      _yn([ud boolForKey:kPrefGlobalOverrideEnableItalic]),
      _yn([ud boolForKey:kPrefGlobalOverrideEnableUnderline])];
 
+    // DockingManager — search-results panel height (what Windows NPP keeps in
+    // this element as the docked finder's bottomHeight).
+    NSInteger searchResultsHeight = (NSInteger)[ud doubleForKey:kPrefSearchResultsHeight];
+    if (searchResultsHeight > 0) {
+        [xml appendFormat:@"        <GUIConfig name=\"DockingManager\" bottomHeight=\"%ld\" />\n",
+            (long)searchResultsHeight];
+    }
+
     [xml appendString:@"    </GUIConfigs>\n"];
     [xml appendString:@"</NotepadPlus>\n"];
 
@@ -752,6 +766,12 @@ void readConfigXML(void) {
                 [ud setBool:_ynBool(v) forKey:kPrefGlobalOverrideEnableItalic];
             if ((v = [el attributeForName:@"underline"].stringValue))
                 [ud setBool:_ynBool(v) forKey:kPrefGlobalOverrideEnableUnderline];
+        }
+        else if ([name isEqualToString:@"DockingManager"]) {
+            // bottomHeight — the search-results panel height (NPP parity: the
+            // docked finder panel's height lives in this slot too).
+            NSString *v = [el attributeForName:@"bottomHeight"].stringValue;
+            if (v.length) [ud setDouble:v.doubleValue forKey:kPrefSearchResultsHeight];
         }
     }
     NSLog(@"[Config] Loaded preferences from %@", path);
@@ -8173,6 +8193,16 @@ static NSArray<NSDictionary *> *convertRecordedToXmlFormat(NSArray<NSDictionary 
                 [[NSUserDefaults standardUserDefaults] setDouble:width forKey:kPrefSidePanelWidth];
             }
         }
+    } else if (sv == _searchSplitView) {
+        // Remember the results-panel height the user dragged to (NPP keeps its
+        // finder bottomHeight the same way).
+        if (![_searchSplitView isSubviewCollapsed:_searchResultsPanel]) {
+            CGFloat height = NSHeight(_searchResultsPanel.frame);
+            if (height >= 60) {
+                [[NSUserDefaults standardUserDefaults] setDouble:height
+                                                          forKey:kPrefSearchResultsHeight];
+            }
+        }
     }
 }
 
@@ -9915,11 +9945,28 @@ typedef NS_ENUM(NSInteger, NppBatchCloseDecision) {
 
     BOOL isCollapsed = [_searchSplitView isSubviewCollapsed:_searchResultsPanel];
     if (isCollapsed) {
-        CGFloat h = NSHeight(_searchSplitView.frame);
-        [_searchSplitView setPosition:h * 0.7 ofDividerAtIndex:0];
+        [self _expandSearchResultsPanel];
     } else {
         [_searchSplitView setPosition:NSHeight(_searchSplitView.frame) ofDividerAtIndex:0];
     }
+}
+
+/// Preferred height of the expanded results panel: the height the user last
+/// dragged it to, else half the split on first use. The editor keeps at least
+/// 30% so a remembered height can never swallow the window.
+- (CGFloat)_searchResultsPanelHeightForSplitHeight:(CGFloat)h {
+    double saved = [[NSUserDefaults standardUserDefaults] doubleForKey:kPrefSearchResultsHeight];
+    CGFloat want = (saved >= 60.0) ? (CGFloat)saved : h * 0.5;
+    CGFloat maxHeight = h * 0.7;
+    return MIN(MAX(want, 80.0), MAX(maxHeight, 80.0));
+}
+
+- (void)_expandSearchResultsPanel {
+    CGFloat h = NSHeight(_searchSplitView.frame);
+    if (h <= 0) return;
+    CGFloat panelHeight = [self _searchResultsPanelHeightForSplitHeight:h];
+    // Divider position is measured from the top of the (flipped) split view.
+    [_searchSplitView setPosition:h - panelHeight ofDividerAtIndex:0];
 }
 
 - (void)_showSearchResultsPanelIfHidden {
@@ -9931,8 +9978,7 @@ typedef NS_ENUM(NSInteger, NppBatchCloseDecision) {
 
     BOOL isCollapsed = [_searchSplitView isSubviewCollapsed:_searchResultsPanel];
     if (isCollapsed) {
-        CGFloat h = NSHeight(_searchSplitView.frame);
-        [_searchSplitView setPosition:h * 0.7 ofDividerAtIndex:0];
+        [self _expandSearchResultsPanel];
     }
 }
 
