@@ -51,7 +51,9 @@
 // MARK: - Color helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-static NSColor * _Nullable colorFromRRGGBB(NSString * _Nullable hex) {
+// Colour parsing is exported (NPPColorFromHex) because the UDL path in
+// UserDefineLangManager stores colours in the same "RRGGBB" form.
+NSColor * _Nullable NPPColorFromHex(NSString * _Nullable hex) {
     if (!hex.length || hex.length < 6) return nil;
     unsigned int v = 0;
     [[NSScanner scannerWithString:hex] scanHexInt:&v];
@@ -109,8 +111,8 @@ static NSString *modelLexerID(NSString *themeID) {
     NPPStyleEntry *s    = [NPPStyleEntry new];
     s.name              = [el attributeForName:@"name"].stringValue ?: @"";
     s.styleID           = [[el attributeForName:@"styleID"].stringValue intValue];
-    s.fgColor           = colorFromRRGGBB([el attributeForName:@"fgColor"].stringValue);
-    s.bgColor           = colorFromRRGGBB([el attributeForName:@"bgColor"].stringValue);
+    s.fgColor           = NPPColorFromHex([el attributeForName:@"fgColor"].stringValue);
+    s.bgColor           = NPPColorFromHex([el attributeForName:@"bgColor"].stringValue);
     s.fontName          = [el attributeForName:@"fontName"].stringValue ?: @"";
     NSString *fsSz      = [el attributeForName:@"fontSize"].stringValue;
     s.fontSize          = (fsSz.length > 0) ? fsSz.intValue : 0;
@@ -311,8 +313,8 @@ static NSString *_userThemesDir(void) {
         }
         if (!entry) continue;
         id val = overrides[key];
-        if ([prop isEqualToString:@"fg"])         entry.fgColor   = colorFromRRGGBB(val);
-        else if ([prop isEqualToString:@"bg"])     entry.bgColor   = colorFromRRGGBB(val);
+        if ([prop isEqualToString:@"fg"])         entry.fgColor   = NPPColorFromHex(val);
+        else if ([prop isEqualToString:@"bg"])     entry.bgColor   = NPPColorFromHex(val);
         else if ([prop isEqualToString:@"fontName"])  entry.fontName  = val;
         else if ([prop isEqualToString:@"fontSize"])  entry.fontSize  = [val intValue];
         else if ([prop isEqualToString:@"bold"])      entry.bold      = [val boolValue];
@@ -376,6 +378,38 @@ static NSString *_userThemesDir(void) {
     if (!_lexers.count) [self loadFromDefaults];
     NPPLexer *g = _lexerDict[@"global"];
     return g ? [g styleForName:name] : nil;
+}
+
+- (NPPStyleEntry *)styleByApplyingGlobalOverride:(NPPStyleEntry *)style {
+    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
+    BOOL ovFg        = [d boolForKey:kPrefGlobalOverrideEnableFg];
+    BOOL ovBg        = [d boolForKey:kPrefGlobalOverrideEnableBg];
+    BOOL ovFont      = [d boolForKey:kPrefGlobalOverrideEnableFont];
+    BOOL ovFontSize  = [d boolForKey:kPrefGlobalOverrideEnableFontSize];
+    BOOL ovBold      = [d boolForKey:kPrefGlobalOverrideEnableBold];
+    BOOL ovItalic    = [d boolForKey:kPrefGlobalOverrideEnableItalic];
+    BOOL ovUnderline = [d boolForKey:kPrefGlobalOverrideEnableUnderline];
+    if (!(ovFg || ovBg || ovFont || ovFontSize || ovBold || ovItalic || ovUnderline))
+        return style;
+
+    // The substituted values come from the dedicated "Global override" row in
+    // GlobalStyles — NOT from "Default Style" (ScintillaEditView.cpp:900
+    // findByName(L"Global override")).
+    NPPStyleEntry *gov = [self globalStyleNamed:@"Global override"];
+    if (!gov) return style;
+
+    NPPStyleEntry *out = [style copy];
+    // An unset override attribute stays nil/empty/0/NO in the returned entry:
+    // the caller then skips the SCI_STYLESET* call, which leaves the attribute
+    // at STYLE_DEFAULT (Windows clears the matching COLORSTYLE_* bit).
+    if (ovFg)   out.fgColor  = gov.fgColor;
+    if (ovBg)   out.bgColor  = gov.bgColor;
+    if (ovFont) out.fontName = gov.fontName.length > 0 ? gov.fontName : @"";
+    if (ovFontSize) out.fontSize = gov.fontSize;
+    if (ovBold)      out.bold      = gov.bold;
+    if (ovItalic)    out.italic    = gov.italic;
+    if (ovUnderline) out.underline = gov.underline;
+    return out;
 }
 
 - (void)previewLexers:(NSArray<NPPLexer *> *)lexers {
@@ -1300,8 +1334,8 @@ static NSString *_userThemesDir(void) {
             if (!e) continue;
             id val = saved[key];
             NSString *prop = parts[2];
-            if ([prop isEqualToString:@"fg"]) e.fgColor = colorFromRRGGBB(val);
-            else if ([prop isEqualToString:@"bg"]) e.bgColor = colorFromRRGGBB(val);
+            if ([prop isEqualToString:@"fg"]) e.fgColor = NPPColorFromHex(val);
+            else if ([prop isEqualToString:@"bg"]) e.bgColor = NPPColorFromHex(val);
             else if ([prop isEqualToString:@"fontName"]) e.fontName = val;
             else if ([prop isEqualToString:@"fontSize"]) e.fontSize = [val intValue];
             else if ([prop isEqualToString:@"bold"]) e.bold = [val boolValue];

@@ -1,6 +1,7 @@
 #import "UserDefineLangManager.h"
 #import "NppPaths.h"
 #import "NppThemeManager.h"
+#import "StyleConfiguratorWindowController.h"
 #import "ScintillaView.h"
 #import "Scintilla.h"
 #import "ScintillaMessages.h"
@@ -470,34 +471,37 @@ static NSData *preprocessKeywords(NSString *raw) {
     [sv message:SCI_SETPROPERTY wParam:(uptr_t)"userDefine.currentBufferID" lParam:(sptr_t)bufIdBuf];
 
     // ── Apply styles ─────────────────────────────────────────────────────
+    // UDL styles honour the "Global override" substitution exactly like
+    // built-in lexer styles: Windows pushes the UDL's style array through
+    // ScintillaEditView::setStyle() as well (setUserLexer), so an enabled
+    // override must reach user-defined languages too. Without this, markdown
+    // (a preinstalled UDL) keeps the white bgColor from its UDL XML while every
+    // built-in language follows the user's forced background.
+    NPPStyleStore *styleStore = [NPPStyleStore sharedStore];
     for (NSDictionary *style in lang.styles) {
-        NSString *styleName = style[@"name"];
-        NSString *fgStr = style[@"fgColor"];
-        NSString *bgStr = style[@"bgColor"];
-        NSString *fontStyleStr = style[@"fontStyle"];
-
-        int styleID = [self _styleIDForName:styleName];
+        int styleID = [self _styleIDForName:style[@"name"]];
         if (styleID < 0) continue;
 
-        if (fgStr.length == 6) {
-            unsigned int rgb = 0;
-            [[NSScanner scannerWithString:fgStr] scanHexInt:&rgb];
-            // NPP stores RRGGBB, Scintilla expects BBGGRR
-            int bgr = (int)(((rgb & 0xFF) << 16) | (rgb & 0xFF00) | ((rgb >> 16) & 0xFF));
-            [sv message:SCI_STYLESETFORE wParam:styleID lParam:bgr];
-        }
-        if (bgStr.length == 6) {
-            unsigned int rgb = 0;
-            [[NSScanner scannerWithString:bgStr] scanHexInt:&rgb];
-            int bgr = (int)(((rgb & 0xFF) << 16) | (rgb & 0xFF00) | ((rgb >> 16) & 0xFF));
-            [sv message:SCI_STYLESETBACK wParam:styleID lParam:bgr];
-        }
-        if (fontStyleStr) {
-            int fs = fontStyleStr.intValue;
-            if (fs & 1) [sv message:SCI_STYLESETBOLD      wParam:styleID lParam:1];
-            if (fs & 2) [sv message:SCI_STYLESETITALIC     wParam:styleID lParam:1];
-            if (fs & 4) [sv message:SCI_STYLESETUNDERLINE  wParam:styleID lParam:1];
-        }
+        NPPStyleEntry *entry = [NPPStyleEntry new];
+        entry.styleID = styleID;
+        entry.fgColor = NPPColorFromHex(style[@"fgColor"]);
+        entry.bgColor = NPPColorFromHex(style[@"bgColor"]);
+        NSString *fontStyleStr = style[@"fontStyle"];
+        int fs = fontStyleStr.intValue;
+        entry.bold      = (fs & 1) != 0;
+        entry.italic    = (fs & 2) != 0;
+        entry.underline = (fs & 4) != 0;
+
+        NPPStyleEntry *s = [styleStore styleByApplyingGlobalOverride:entry];
+        if (s.fgColor) [sv setColorProperty:SCI_STYLESETFORE parameter:styleID value:s.fgColor];
+        if (s.bgColor) [sv setColorProperty:SCI_STYLESETBACK parameter:styleID value:s.bgColor];
+        if (s.fontName.length > 0)
+            [sv message:SCI_STYLESETFONT wParam:styleID lParam:(sptr_t)s.fontName.UTF8String];
+        if (s.fontSize > 0)
+            [sv message:SCI_STYLESETSIZEFRACTIONAL wParam:styleID lParam:(sptr_t)(s.fontSize * 100)];
+        [sv message:SCI_STYLESETBOLD      wParam:styleID lParam:s.bold      ? 1 : 0];
+        [sv message:SCI_STYLESETITALIC    wParam:styleID lParam:s.italic    ? 1 : 0];
+        [sv message:SCI_STYLESETUNDERLINE wParam:styleID lParam:s.underline ? 1 : 0];
     }
 
     // Force re-lex the entire document

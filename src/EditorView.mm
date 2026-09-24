@@ -1658,13 +1658,19 @@ static NSColor *nppColorFromHex(NSString *hex) {
     [sci setColorProperty:SCI_STYLESETFORE parameter:STYLE_LINENUMBER value:lnFg];
     [sci setColorProperty:SCI_STYLESETBACK parameter:STYLE_LINENUMBER value:lnBg];
 
-    // Indent guideline style (styleID=37)
-    NPPStyleEntry *gsIndent = [store globalStyleNamed:@"Indent guideline style"];
+    // Indent guideline style (styleID=37) and Brace highlight (styleID=34) are
+    // applied through setStyle() in Windows, so an enabled "Global override"
+    // replaces their colours too (ScintillaEditView.cpp:2150/2153). The line
+    // number margin above deliberately does NOT: NPP pushes that one through
+    // setSpecialStyle(), which skips the override.
+    NPPStyleEntry *gsIndent = [store styleByApplyingGlobalOverride:
+                                  [store globalStyleNamed:@"Indent guideline style"]];
     if (gsIndent.fgColor) [sci setColorProperty:SCI_STYLESETFORE parameter:37 value:gsIndent.fgColor];
     if (gsIndent.bgColor) [sci setColorProperty:SCI_STYLESETBACK parameter:37 value:gsIndent.bgColor];
 
     // Brace highlight (styleID=34)
-    NPPStyleEntry *gsBrace = [store globalStyleNamed:@"Brace highlight style"];
+    NPPStyleEntry *gsBrace = [store styleByApplyingGlobalOverride:
+                                 [store globalStyleNamed:@"Brace highlight style"]];
     [sci setColorProperty:SCI_STYLESETFORE parameter:STYLE_BRACELIGHT
                     value:gsBrace.fgColor ?: [NSColor colorWithRed:0.80 green:0.0 blue:0.0 alpha:1.0]];
     [sci setColorProperty:SCI_STYLESETBACK parameter:STYLE_BRACELIGHT
@@ -1754,12 +1760,14 @@ static NSColor *nppColorFromHex(NSString *hex) {
     BOOL showGuides = [[NSUserDefaults standardUserDefaults] boolForKey:kPrefShowIndentGuides];
     [sci message:SCI_SETINDENTATIONGUIDES wParam:(showGuides ? SC_IV_LOOKBOTH : SC_IV_NONE)];
     [sci message:SCI_SETEOLMODE wParam:SC_EOL_LF];
-    NPPStyleEntry *gsIndent = [store globalStyleNamed:@"Indent guideline style"];
+    NPPStyleEntry *gsIndent = [store styleByApplyingGlobalOverride:
+                                  [store globalStyleNamed:@"Indent guideline style"]];
     if (gsIndent.fgColor) [sci setColorProperty:SCI_STYLESETFORE parameter:37 value:gsIndent.fgColor];
     if (gsIndent.bgColor) [sci setColorProperty:SCI_STYLESETBACK parameter:37 value:gsIndent.bgColor];
 
     // Brace matching
-    NPPStyleEntry *gsBrace = [store globalStyleNamed:@"Brace highlight style"];
+    NPPStyleEntry *gsBrace = [store styleByApplyingGlobalOverride:
+                                 [store globalStyleNamed:@"Brace highlight style"]];
     [sci setColorProperty:SCI_STYLESETFORE parameter:STYLE_BRACELIGHT
                     value:gsBrace.fgColor ?: [NSColor colorWithRed:0.80 green:0.0 blue:0.0 alpha:1.0]];
     [sci setColorProperty:SCI_STYLESETBACK parameter:STYLE_BRACELIGHT
@@ -2862,70 +2870,27 @@ static const int kGitGutterMargin   = 4;  // margin index for git gutter
     NSArray<NPPStyleEntry *> *styles = [store stylesForLexer:lid];
     if (!styles.count) return;
 
-    // Global override (issue #149 — Windows parity). The source of the
-    // substituted values is the dedicated "Global override" row inside
-    // GlobalStyles — NOT "Default Style". Mirrors ScintillaEditView.cpp:900
-    // (findByName(L"Global override")). When an attribute is "transparent"
-    // on the override row (nil fg/bg, empty fontName, fontSize=0), the
-    // corresponding per-style attribute is left to fall back to STYLE_DEFAULT
-    // (we skip the SCI_STYLESET* call). Caller has just run STYLECLEARALL.
-    NSUserDefaults *d = [NSUserDefaults standardUserDefaults];
-    BOOL ovFg        = [d boolForKey:kPrefGlobalOverrideEnableFg];
-    BOOL ovBg        = [d boolForKey:kPrefGlobalOverrideEnableBg];
-    BOOL ovFont      = [d boolForKey:kPrefGlobalOverrideEnableFont];
-    BOOL ovFontSize  = [d boolForKey:kPrefGlobalOverrideEnableFontSize];
-    BOOL ovBold      = [d boolForKey:kPrefGlobalOverrideEnableBold];
-    BOOL ovItalic    = [d boolForKey:kPrefGlobalOverrideEnableItalic];
-    BOOL ovUnderline = [d boolForKey:kPrefGlobalOverrideEnableUnderline];
-    NPPStyleEntry *gov = (ovFg || ovBg || ovFont || ovFontSize ||
-                          ovBold || ovItalic || ovUnderline)
-                       ? [store globalStyleNamed:@"Global override"] : nil;
-
+    // Global override (issue #149 — Windows parity): the enabled attributes of
+    // the "Global override" row replace every style's own values. The
+    // substitution lives on NPPStyleStore so the UDL path
+    // (UserDefineLangManager) honours it too — Windows pushes UDL styles
+    // through the same setStyle() call. Caller has just run STYLECLEARALL, so
+    // attributes the helper leaves unset stay at STYLE_DEFAULT.
     for (NPPStyleEntry *e in styles) {
         int sid = e.styleID;
+        NPPStyleEntry *s = [store styleByApplyingGlobalOverride:e];
 
-        // fg
-        if (ovFg && gov) {
-            if (gov.fgColor)
-                [sci setColorProperty:SCI_STYLESETFORE parameter:sid value:gov.fgColor];
-            // else: leave at STYLE_DEFAULT (transparent override → inherit)
-        } else if (e.fgColor) {
-            [sci setColorProperty:SCI_STYLESETFORE parameter:sid value:e.fgColor];
-        }
-
-        // bg
-        if (ovBg && gov) {
-            if (gov.bgColor)
-                [sci setColorProperty:SCI_STYLESETBACK parameter:sid value:gov.bgColor];
-        } else if (e.bgColor) {
-            [sci setColorProperty:SCI_STYLESETBACK parameter:sid value:e.bgColor];
-        }
-
-        // font name
-        if (ovFont && gov) {
-            if (gov.fontName.length > 0)
-                [sci message:SCI_STYLESETFONT wParam:sid lParam:(sptr_t)gov.fontName.UTF8String];
-        } else if (e.fontName.length > 0) {
-            [sci message:SCI_STYLESETFONT wParam:sid lParam:(sptr_t)e.fontName.UTF8String];
-        }
-
-        // font size
-        if (ovFontSize && gov) {
-            if (gov.fontSize > 0)
-                [sci message:SCI_STYLESETSIZEFRACTIONAL wParam:sid lParam:(sptr_t)(gov.fontSize * 100)];
-        } else if (e.fontSize > 0) {
-            [sci message:SCI_STYLESETSIZEFRACTIONAL wParam:sid lParam:(sptr_t)(e.fontSize * 100)];
-        }
-
-        // bold / italic / underline — the override row's value substitutes
-        // directly. Caller already pushed STYLE_DEFAULT's font-style bits,
-        // so absent flags fall through to the default via STYLECLEARALL.
-        BOOL bold      = (ovBold      && gov) ? gov.bold      : e.bold;
-        BOOL italic    = (ovItalic    && gov) ? gov.italic    : e.italic;
-        BOOL underline = (ovUnderline && gov) ? gov.underline : e.underline;
-        [sci message:SCI_STYLESETBOLD      wParam:sid lParam:bold      ? 1 : 0];
-        [sci message:SCI_STYLESETITALIC    wParam:sid lParam:italic    ? 1 : 0];
-        [sci message:SCI_STYLESETUNDERLINE wParam:sid lParam:underline ? 1 : 0];
+        if (s.fgColor)
+            [sci setColorProperty:SCI_STYLESETFORE parameter:sid value:s.fgColor];
+        if (s.bgColor)
+            [sci setColorProperty:SCI_STYLESETBACK parameter:sid value:s.bgColor];
+        if (s.fontName.length > 0)
+            [sci message:SCI_STYLESETFONT wParam:sid lParam:(sptr_t)s.fontName.UTF8String];
+        if (s.fontSize > 0)
+            [sci message:SCI_STYLESETSIZEFRACTIONAL wParam:sid lParam:(sptr_t)(s.fontSize * 100)];
+        [sci message:SCI_STYLESETBOLD      wParam:sid lParam:s.bold      ? 1 : 0];
+        [sci message:SCI_STYLESETITALIC    wParam:sid lParam:s.italic    ? 1 : 0];
+        [sci message:SCI_STYLESETUNDERLINE wParam:sid lParam:s.underline ? 1 : 0];
     }
 }
 

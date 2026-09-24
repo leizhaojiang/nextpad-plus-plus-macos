@@ -24,6 +24,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable NPPStyleEntry *)styleForID:(int)sid;
 @end
 
+/// Parse an NPP "RRGGBB" colour string (the form used by stylers.xml and the
+/// UDL XML files) into an NSColor. Returns nil for nil / empty / malformed input.
+NSColor * _Nullable NPPColorFromHex(NSString * _Nullable hex);
+
 // ── Style store (singleton) ───────────────────────────────────────────────────
 
 @interface NPPStyleStore : NSObject
@@ -56,6 +60,18 @@ NS_ASSUME_NONNULL_BEGIN
 /// "Current line background colour", "Selected text colour", "Fold", "Fold margin",
 /// "White space symbol", "Bad brace colour", etc.
 - (nullable NPPStyleEntry *)globalStyleNamed:(NSString *)name;
+
+/// NPP's "Global override" substitution (Windows parity: ScintillaEditView.cpp
+/// — setStyle()/setSpecialStyle(), issue #149). For every enabled force-flag
+/// the matching attribute of the "Global override" row replaces the style's own
+/// value; when the override row leaves an attribute unset ("transparent") the
+/// returned entry clears that attribute (nil colour, empty font, 0 size,
+/// NO flags) so the caller skips its SCI_STYLESET* call and the attribute stays
+/// at STYLE_DEFAULT. Returns a copy — `style` is never modified. Every path
+/// that pushes per-style attributes must go through this method: built-in
+/// lexers (EditorView) *and* UDL languages (UserDefineLangManager), because
+/// Windows applies both through setStyle().
+- (NPPStyleEntry *)styleByApplyingGlobalOverride:(NPPStyleEntry *)style;
 
 /// Load a fresh set of lexers for the given theme name (Default or XML file name).
 /// Returns a fully-merged array (model defaults + theme overrides).
