@@ -22,9 +22,10 @@
 // ── LOCAL CHANGE (Nextpad++ macOS port) ──────────────────────────────────────
 // Copy of lexilla/lexers/LexSearchResult.cxx. The vendored file is excluded
 // from the build (CMakeLists.txt) and this copy is compiled instead.
-// Difference from upstream: the port writes result lines as "\t" + line text,
-// without NPP's "Line NNNN:" prefix (SearchResultsPanel.mm), so the prefix
-// parser in ColouriseSearchResultLine is gone — see the comment there.
+// Difference from upstream: the results panel writes flush-left lines (no NPP
+// "Line NNNN:" prefix, no tab/space indent), so the line kind travels in
+// SearchResultMarkings._lineKinds (see Scintilla.h) instead of the first
+// character — see ColouriseSearchResultLine below.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #include <stdlib.h>
@@ -67,20 +68,25 @@ static void ColouriseSearchResultLine(SearchResultMarkings* pMarkings, char *lin
 {
 	// startLine and endPos are the absolute positions.
 
-	if (lineBuffer[0] == ' ') // white space - file header
+	// LOCAL CHANGE: the line kind comes from the markings struct (see
+	// SearchResultLineKind in Scintilla.h) so the panel can write flush-left
+	// lines — there is no "\t" / space prefix to key off any more. Upstream
+	// inferred the kind from the first character and, for result lines, parsed
+	// the "Line NNNN:" prefix to find where the text starts; both are gone.
+	// Marking offsets are unchanged: mi.first is the 0-based offset of the first
+	// matched byte within the line, mi.second one past the last matched byte
+	// (the -1 below is the upstream convention that makes ColourTo's inclusive
+	// end land on the right bytes).
+	int lineKind = -1;
+	if (pMarkings && pMarkings->_lineKinds && linenum >= 0 &&
+	    static_cast<intptr_t>(linenum) < pMarkings->_length)
+		lineKind = pMarkings->_lineKinds[linenum];
+
+	if (lineKind == SearchResultLineKindFileHeader || (lineKind < 0 && lineBuffer[0] == ' '))
 	{
 		styler.ColourTo(endPos, SCE_SEARCHRESULT_FILE_HEADER);
 	}
-	else if (lineBuffer[0] == '\t') // \t - result line
-	// LOCAL CHANGE: result lines carry no "Line NNNN:" prefix, so the whole
-	// line is plain text and only the hit markings paint over it. Upstream
-	// scans for the first digit and the following ':' to find the text start
-	// and to colour SCE_SEARCHRESULT_LINE_NUMBER — that parser mis-styles any
-	// result text that happens to contain digits (and walks off the buffer
-	// when it contains none). Marking offsets are unchanged: mi.first is the
-	// 0-based offset of the first matched byte within the line, mi.second one
-	// past the last matched byte (the -1 below is the upstream convention that
-	// makes ColourTo's inclusive end land on the right bytes).
+	else if (lineKind == SearchResultLineKindResult || (lineKind < 0 && lineBuffer[0] == '\t'))
 	{
 		int currentState = SCE_SEARCHRESULT_DEFAULT;
 

@@ -34,6 +34,10 @@ struct _SRLineInfo {
 
     // SearchResultMarkings for the lexer
     std::vector<SearchResultMarkingLine> _markingLines;
+    // One SearchResultLineKind per line. The lexer classifies by kind because
+    // the panel writes flush-left lines (no "\t" / space prefixes) — see
+    // src/LexSearchResult.cxx.
+    std::vector<int> _lineKinds;
     SearchResultMarkings _markingsStruct;
 
     // Toggle states
@@ -66,8 +70,9 @@ struct _SRLineInfo {
             self.layer.cornerRadius  = 8.0;
             self.layer.masksToBounds = YES;
         }
-        _markingsStruct._length   = 0;
-        _markingsStruct._markings = nullptr;
+        _markingsStruct._length    = 0;
+        _markingsStruct._markings  = nullptr;
+        _markingsStruct._lineKinds = nullptr;
         _wordWrapEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"SearchResultsWordWrap"];
         _purgeBeforeSearch = [[NSUserDefaults standardUserDefaults] boolForKey:@"SearchResultsPurge"];
 
@@ -128,7 +133,12 @@ struct _SRLineInfo {
     [_sci message:SCI_SETPROPERTY wParam:(uptr_t)"fold" lParam:(sptr_t)"1"];
     [_sci message:SCI_SETMARGINTYPEN  wParam:2 lParam:SC_MARGIN_SYMBOL];
     [_sci message:SCI_SETMARGINMASKN  wParam:2 lParam:SC_MASK_FOLDERS];
-    [_sci message:SCI_SETMARGINWIDTHN wParam:2 lParam:16];
+    // Margin 2 (the fold margin) stays at width 0: the panel shows flush-left
+    // lines (owner request) and no fold markers were being drawn, so the strip
+    // was pure whitespace. Folding itself is unaffected — the fold levels still
+    // come from the lexer and the Fold/Unfold menu and context-menu commands
+    // still work; widen this margin again if clickable fold markers are wanted.
+    [_sci message:SCI_SETMARGINWIDTHN wParam:2 lParam:0];
     [_sci message:SCI_SETMARGINSENSITIVEN wParam:2 lParam:1];
     [_sci message:SCI_SETAUTOMATICFOLD wParam:SC_AUTOMATICFOLD_SHOW | SC_AUTOMATICFOLD_CLICK | SC_AUTOMATICFOLD_CHANGE];
 
@@ -604,10 +614,11 @@ static sptr_t _srSciColor(NSColor *c) {
     // Empty marking for header line
     SearchResultMarkingLine emptyMarking = {};
     _markingLines.push_back(emptyMarking);
+    _lineKinds.push_back(SearchResultLineKindSearchHeader);
 
     for (NPPFileResults *fileRes in fileResults) {
-        // File header
-        NSString *fileHeader = [NSString stringWithFormat:@" %@ (%ld hit%@)\n",
+        // File header — flush left like every other line (owner request).
+        NSString *fileHeader = [NSString stringWithFormat:@"%@ (%ld hit%@)\n",
             fileRes.filePath,
             (long)fileRes.results.count,
             fileRes.results.count == 1 ? @"" : @"s"];
@@ -621,17 +632,16 @@ static sptr_t _srSciColor(NSColor *c) {
         fileInfo.lineNumber = 0;
         _lineInfos.push_back(fileInfo);
         _markingLines.push_back(SearchResultMarkingLine{});
+        _lineKinds.push_back(SearchResultLineKindFileHeader);
 
         for (NPPSearchResult *r in fileRes.results) {
-            // Result line: "\t" + the source line's text. NPP prefixes the found
-            // line's number ("\t" + find-result-line-prefix + padded number +
-            // ": ", Finder::foundLine — FindReplaceDlg.cpp:5805), but the owner
-            // asked for the line content alone so long log lines stay readable
-            // in a narrow panel. The line number still drives navigation via
-            // _lineInfos; the marking offsets below are relative to the emitted
-            // text, so only this prefix's byte length matters.
-            NSString *linePrefix = @"\t";
-            size_t prefixBytes = strlen(linePrefix.UTF8String);
+            // Result line: the source line's text alone, flush left. NPP writes
+            // "\t" + find-result-line-prefix + padded line number + ": " + text
+            // (Finder::foundLine — FindReplaceDlg.cpp:5805); the owner asked for
+            // the text without the prefix and without left whitespace. The line
+            // number still drives navigation via _lineInfos, and the lexer gets
+            // the line kind from _lineKinds (src/LexSearchResult.cxx).
+            size_t prefixBytes = 0;
 
             // NPP truncates result lines to the search-result lexer's line buffer
             // (SC_SEARCHRESULT_LINEBUFFERMAXLENGTH - 4, Scintilla.h). Appending a
@@ -657,7 +667,7 @@ static sptr_t _srSciColor(NSColor *c) {
                 text = [text substringToIndex:end];
             }
 
-            NSString *resultLine = [NSString stringWithFormat:@"%@%@\n", linePrefix, text];
+            NSString *resultLine = [NSString stringWithFormat:@"%@\n", text];
 
             // matchStart/matchLength are UTF-8 byte offsets (NPP convention:
             // start_mark = targetStart - lstart; SearchEngine normalises every
@@ -678,6 +688,7 @@ static sptr_t _srSciColor(NSColor *c) {
                 marking._segmentPostions.push_back(std::make_pair(segStart, segEnd));
             }
             _markingLines.push_back(marking);
+            _lineKinds.push_back(SearchResultLineKindResult);
 
             // wParam = UTF-8 byte count, not character count — see issue #46 note above.
             [_sci message:SCI_APPENDTEXT
@@ -692,8 +703,9 @@ static sptr_t _srSciColor(NSColor *c) {
     }
 
     // Update markings struct pointer for lexer
-    _markingsStruct._length   = (intptr_t)_markingLines.size();
-    _markingsStruct._markings = _markingLines.data();
+    _markingsStruct._length    = (intptr_t)_markingLines.size();
+    _markingsStruct._markings  = _markingLines.data();
+    _markingsStruct._lineKinds = _lineKinds.data();
 
     // Pass pointer to lexer
     char ptrStr[64];
@@ -726,8 +738,10 @@ static sptr_t _srSciColor(NSColor *c) {
     [_sci message:SCI_SETREADONLY wParam:1];
     _lineInfos.clear();
     _markingLines.clear();
-    _markingsStruct._length = 0;
-    _markingsStruct._markings = nullptr;
+    _lineKinds.clear();
+    _markingsStruct._length    = 0;
+    _markingsStruct._markings  = nullptr;
+    _markingsStruct._lineKinds = nullptr;
 }
 
 /// Select an entire line in the search results panel so it stays highlighted.

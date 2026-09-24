@@ -1487,6 +1487,13 @@ struct SCNotification {
 };
 
 #include <vector>
+// LOCAL CHANGE (Nextpad++): line kinds for SearchResultMarkings._lineKinds.
+enum SearchResultLineKind {
+	SearchResultLineKindResult = 0,
+	SearchResultLineKindFileHeader = 1,
+	SearchResultLineKindSearchHeader = 2,
+};
+
 struct SearchResultMarkingLine { // each line could have several segments if user want to see only 1 found line which contains several results
 	std::vector<std::pair<intptr_t, intptr_t>> _segmentPostions; // a vector of pair of start & end of occurrence for colourizing
 };
@@ -1494,6 +1501,12 @@ struct SearchResultMarkingLine { // each line could have several segments if use
 struct SearchResultMarkings {
 	intptr_t _length;
 	SearchResultMarkingLine *_markings;
+	// LOCAL CHANGE (Nextpad++): one SearchResultLineKind per line, parallel to
+	// _markings. Lets LexSearchResult tell headers from result lines without the
+	// upstream "\t" / space first-character convention, so the results panel can
+	// write flush-left lines. May be null — the lexer then falls back to the
+	// upstream heuristic (see src/LexSearchResult.cxx).
+	const int *_lineKinds;
 };
 #ifdef INCLUDE_DEPRECATED_FEATURES
 
