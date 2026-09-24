@@ -81,6 +81,11 @@ file(GLOB LEX_SRCS
 list(FILTER LEX_SRCS EXCLUDE REGEX "LexUser\\.cxx$")
 list(APPEND LEX_SRCS "${CMAKE_SOURCE_DIR}/src/LexUser.cxx")
 
+# LexSearchResult.cxx: result lines here have no NPP "Line NNNN:" prefix, so the
+# vendored prefix parser is replaced by a local copy (see src/LexSearchResult.cxx).
+list(FILTER LEX_SRCS EXCLUDE REGEX "LexSearchResult\\.cxx$")
+list(APPEND LEX_SRCS "${CMAKE_SOURCE_DIR}/src/LexSearchResult.cxx")
+
 add_library(lexilla STATIC ${LEX_SRCS})
 
 target_include_directories(lexilla PUBLIC

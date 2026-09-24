@@ -602,8 +602,14 @@ static sptr_t _srSciColor(NSColor *c) {
         _markingLines.push_back(SearchResultMarkingLine{});
 
         for (NPPSearchResult *r in fileRes.results) {
-            // Result line: \tLine NNNN: text\n
-            NSString *linePrefix = [NSString stringWithFormat:@"\tLine %6ld: ", (long)r.lineNumber];
+            // Result line: "\t" + the source line's text. NPP prefixes the found
+            // line's number ("\t" + find-result-line-prefix + padded number +
+            // ": ", Finder::foundLine — FindReplaceDlg.cpp:5805), but the owner
+            // asked for the line content alone so long log lines stay readable
+            // in a narrow panel. The line number still drives navigation via
+            // _lineInfos; the marking offsets below are relative to the emitted
+            // text, so only this prefix's byte length matters.
+            NSString *linePrefix = @"\t";
             size_t prefixBytes = strlen(linePrefix.UTF8String);
 
             // NPP truncates result lines to the search-result lexer's line buffer
