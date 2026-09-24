@@ -1,6 +1,7 @@
 #import "SearchResultsPanel.h"
 #import "NppThemeManager.h"
 #import "StyleConfiguratorWindowController.h"
+#import "PreferencesWindowController.h"
 #import "NppLocalizer.h"
 #import "ScintillaView.h"
 #import "Scintilla.h"
@@ -349,21 +350,37 @@ static sptr_t _srSciColor(NSColor *c) {
     NSAppearance *panelAppearance = [NSAppearance appearanceNamed:
         dark ? NSAppearanceNameDarkAqua : NSAppearanceNameAqua];
 
-    // Background & foreground from editor theme
+    // Background & foreground from the editor theme, with the same "Global
+    // override" substitution the editor applies (issue #149). Windows pins the
+    // finder view's defaults to the Default Style values *after* running them
+    // through the override (FindReplaceDlg.cpp:6095-6114), so an enabled
+    // override colours the results panel exactly like the editor instead of
+    // letting the panel drift to the un-overridden Default Style.
+    NPPStyleEntry *gov = [store globalStyleNamed:@"Global override"];
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    BOOL ovFg       = gov && [ud boolForKey:kPrefGlobalOverrideEnableFg];
+    BOOL ovBg       = gov && [ud boolForKey:kPrefGlobalOverrideEnableBg];
+    BOOL ovFont     = gov && [ud boolForKey:kPrefGlobalOverrideEnableFont]     && gov.fontName.length > 0;
+    BOOL ovFontSize = gov && [ud boolForKey:kPrefGlobalOverrideEnableFontSize] && gov.fontSize > 0;
+
     NSColor *bgColor = [store globalBg];
     NSColor *fgColor = [store globalFg];
+    NSString *fontName = store.globalFontName.length ? store.globalFontName : @"Menlo";
+    int fontSize = store.globalFontSize > 0 ? store.globalFontSize : 12;
+    if (ovFg && gov.fgColor)   fgColor  = gov.fgColor;
+    if (ovBg && gov.bgColor)   bgColor  = gov.bgColor;
+    if (ovFont)                fontName = gov.fontName;
+    if (ovFontSize)            fontSize = gov.fontSize;
+
     sptr_t bg = _srSciColor(bgColor);
     sptr_t fg = _srSciColor(fgColor);
     CGFloat bgBrightness = bgColor.brightnessComponent;
 
-    // Font: take the theme's Default Style font (what the editor's document
-    // uses) instead of Scintilla's built-in default. CJK text has no glyphs in
-    // the primary font, so it renders through the fallback chain of whatever
-    // font is active — with a different base font the panel's Chinese came out
-    // visibly lighter than the editor's. STYLECLEARALL then makes every style
-    // inherit it.
-    NSString *fontName = store.globalFontName.length ? store.globalFontName : @"Menlo";
-    int fontSize = store.globalFontSize > 0 ? store.globalFontSize : 12;
+    // The theme's Default Style font (what the editor's document uses) beats
+    // Scintilla's built-in default: CJK text has no glyphs in the primary font,
+    // so it renders through the fallback chain of whatever font is active —
+    // with a different base font the panel's Chinese came out visibly lighter
+    // than the editor's. STYLECLEARALL then makes every style inherit it.
     [_sci message:SCI_STYLESETFONT wParam:STYLE_DEFAULT lParam:(sptr_t)fontName.UTF8String];
     [_sci message:SCI_STYLESETSIZE wParam:STYLE_DEFAULT lParam:fontSize];
     [_sci message:SCI_STYLESETBACK wParam:STYLE_DEFAULT lParam:bg];
@@ -407,8 +424,12 @@ static sptr_t _srSciColor(NSColor *c) {
     for (NPPStyleEntry *e in [store stylesForLexer:@"searchResult"]) {
         int sid = e.styleID;
         if (sid < 0 || sid > SCE_SEARCHRESULT_CURRENT_LINE || sid == 5) continue; // 5 = unused (HIGHLIGHT_LINE)
-        if (e.fgColor) [_sci message:SCI_STYLESETFORE wParam:(uptr_t)sid lParam:_srSciColor(e.fgColor)];
-        if (e.bgColor) {
+        // An enabled override pins SCE_SEARCHRESULT_DEFAULT — a theme entry for
+        // it must not undo that (Windows re-pins the style after applying the
+        // lexer styles, FindReplaceDlg.cpp:6110).
+        BOOL pinned = (sid == SCE_SEARCHRESULT_DEFAULT);
+        if (e.fgColor && !(pinned && ovFg)) [_sci message:SCI_STYLESETFORE wParam:(uptr_t)sid lParam:_srSciColor(e.fgColor)];
+        if (e.bgColor && !(pinned && ovBg)) {
             sptr_t bgVal = _srSciColor(e.bgColor);
             [_sci message:SCI_STYLESETBACK wParam:(uptr_t)sid lParam:bgVal];
             if (sid == SCE_SEARCHRESULT_CURRENT_LINE)
