@@ -356,6 +356,16 @@ static sptr_t _srSciColor(NSColor *c) {
     sptr_t fg = _srSciColor(fgColor);
     CGFloat bgBrightness = bgColor.brightnessComponent;
 
+    // Font: take the theme's Default Style font (what the editor's document
+    // uses) instead of Scintilla's built-in default. CJK text has no glyphs in
+    // the primary font, so it renders through the fallback chain of whatever
+    // font is active — with a different base font the panel's Chinese came out
+    // visibly lighter than the editor's. STYLECLEARALL then makes every style
+    // inherit it.
+    NSString *fontName = store.globalFontName.length ? store.globalFontName : @"Menlo";
+    int fontSize = store.globalFontSize > 0 ? store.globalFontSize : 12;
+    [_sci message:SCI_STYLESETFONT wParam:STYLE_DEFAULT lParam:(sptr_t)fontName.UTF8String];
+    [_sci message:SCI_STYLESETSIZE wParam:STYLE_DEFAULT lParam:fontSize];
     [_sci message:SCI_STYLESETBACK wParam:STYLE_DEFAULT lParam:bg];
     [_sci message:SCI_STYLESETFORE wParam:STYLE_DEFAULT lParam:fg];
     [_sci message:SCI_STYLECLEARALL];
@@ -407,6 +417,11 @@ static sptr_t _srSciColor(NSColor *c) {
         [_sci message:SCI_STYLESETBOLD   wParam:(uptr_t)sid lParam:e.bold   ? 1 : 0];
         [_sci message:SCI_STYLESETITALIC wParam:(uptr_t)sid lParam:e.italic ? 1 : 0];
     }
+
+    // The hit word stays bold: the panel's own palette has always emphasised the
+    // matched text, and the theme's model leaves "Hit Word" at fontStyle 0,
+    // which would clear it. Colours still come from the theme.
+    [_sci message:SCI_STYLESETBOLD wParam:SCE_SEARCHRESULT_WORD2SEARCH lParam:1];
 
     // EOL-filled for headers
     [_sci message:SCI_STYLESETEOLFILLED wParam:SCE_SEARCHRESULT_FILE_HEADER lParam:1];
