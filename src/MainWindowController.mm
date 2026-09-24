@@ -4244,17 +4244,27 @@ static BOOL groupHasTrailingSep(NSString *ident) {
     [self rebuildRunMenu];
     [self updateStatusBar];
 
-    // Accept file drag-and-drop onto the primary editor area
-    __weak typeof(self) weakSelf = self;
-    ((NppDropView *)_tabManager.contentView).dropHandler = ^(NSArray<NSString *> *paths) {
-        __strong typeof(weakSelf) strongSelf = weakSelf;
-        if (!strongSelf) return;
-        for (NSString *path in paths) {
-            [strongSelf->_tabManager openFileAtPath:path];
-            [strongSelf addToRecentFiles:path];
-        }
-        [strongSelf updateTitle];
-    };
+    // Accept file drag-and-drop onto every editor pane. Dropped files open
+    // directly; dropped folders expand **recursively** to the files they contain
+    // (+[AppDelegate expandFolderPaths:] — hidden entries and app bundles are
+    // skipped, and a folder beyond the confirm threshold asks first, returning
+    // nil on cancel).
+    for (TabManager *manager in @[_tabManager, _subTabManagerH, _subTabManagerV]) {
+        __weak typeof(self) weakSelf = self;
+        __weak TabManager *weakManager = manager;
+        ((NppDropView *)manager.contentView).dropHandler = ^(NSArray<NSString *> *paths) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            __strong TabManager *strongManager = weakManager;
+            if (!strongSelf || !strongManager) return;
+            NSArray<NSString *> *files = [AppDelegate expandFolderPaths:paths recursive:YES];
+            if (!files) return;                      // user cancelled the folder prompt
+            for (NSString *path in files) {
+                [strongManager openFileAtPath:path];
+                [strongSelf addToRecentFiles:path];
+            }
+            [strongSelf updateTitle];
+        };
+    }
 }
 
 - (NSTextField *)makeStatusLabel:(NSTextAlignment)align {

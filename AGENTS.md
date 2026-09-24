@@ -54,6 +54,7 @@ Both big controllers have `#pragma mark` section maps — use them instead of re
 - Localization of new UI: build labels through `[[NppLocalizer shared] translate:…]` **in shared helpers** where a window has them (e.g. `UserDefineDialog`'s `L`/`groupBox`/`chk`/`stylerBtn`). `translate:` matches by normalized English title, so any wording that also exists in the Windows nativeLang files translates automatically; macOS-only wording finds no entry and falls back to English (no mechanism yet — see `docs/PROJECT_SCAN.md` §5.12 for the inventory).
 - New UI language: XML into `resources/localization/` + BCP-47 code in `NPP_BUNDLE_LANGUAGES` (`CMakeLists.txt`).
 - Sessions/backups: `session.plist` and `backup/` are app-scoped — save once per quit via `AppDelegate`; allocate backup names through `EditorView uniqueBackupPathInDirectory:`.
+- Dropped / OS-provided paths go through `+[AppDelegate expandFolderPaths:recursive:]`: files pass through, folders expand to their files, hidden entries and package directories (.app, .bundle …) are skipped, the result is sorted, and more than 20 files asks for confirmation first (nil = user cancelled, so callers must do nothing). Folder **drops** use `recursive:YES`; the CLI / Finder-service / open-document paths keep `recursive:NO` (the documented bare-folder behaviour, issue #131). `NppDropView.dropHandler` is wired on all three editor panes.
 
 **Style**
 - Comments explain *why*, often with the GitHub issue number. Match that; a fix should say which issue it closes.

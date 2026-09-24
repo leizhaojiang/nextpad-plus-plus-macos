@@ -17,7 +17,6 @@
 static const NSUInteger kFolderOpenConfirmThreshold = 20;
 
 @interface AppDelegate ()
-- (NSArray<NSString *> *)_expandFolderArguments:(NSArray<NSString *> *)paths;
 @end
 
 @implementation AppDelegate {
@@ -251,7 +250,7 @@ static const NSUInteger kFolderOpenConfirmThreshold = 20;
     // ── Mark launch complete and process any pending file-open requests ────
     _didFinishLaunching = YES;
     if (_pendingFilePaths.count > 0) {
-        NSArray<NSString *> *files = [self _expandFolderArguments:_pendingFilePaths];
+        NSArray<NSString *> *files = [AppDelegate expandFolderPaths:_pendingFilePaths recursive:NO];
         [_pendingFilePaths removeAllObjects];
         for (NSString *path in files) {
             [self.mainWindowController openFileAtPath:path];
@@ -323,15 +322,17 @@ static const NSUInteger kFolderOpenConfirmThreshold = 20;
     return mwc;
 }
 
-// ── Folder argument expansion ────────────────────────────────────────────────
+// ── Folder expansion for dropped / OS-provided paths ─────────────────────────
 
-// Expands any directory in `paths` to its TOP-LEVEL regular files. There
-// is no recursion: subdirectories and hidden entries (dotfiles) are
-// skipped. Plain file paths — and non-existent paths — pass through
-// unchanged so the opener keeps its existing behaviour. If expanding a
-// folder pushes the total file count past kFolderOpenConfirmThreshold the
-// user is asked once; returns nil if they decline.
-- (NSArray<NSString *> *)_expandFolderArguments:(NSArray<NSString *> *)paths {
+// Expands every directory in `paths` RECURSIVELY to all regular files it
+// contains (hidden entries and package directories such as .app bundles are
+// skipped; symlinked directories are not followed). Plain file paths — and
+// non-existent paths — pass through unchanged so the opener keeps its existing
+// behaviour. Results are sorted for a deterministic tab order. If expanding a
+// folder pushes the total file count past kFolderOpenConfirmThreshold the user
+// is asked once; returns nil if they decline.
++ (NSArray<NSString *> *)expandFolderPaths:(NSArray<NSString *> *)paths
+                                 recursive:(BOOL)recursive {
     NSFileManager *fm = [NSFileManager defaultManager];
     NSMutableArray<NSString *> *result = [NSMutableArray array];
     BOOL anyFolderExpanded = NO;
@@ -343,18 +344,45 @@ static const NSUInteger kFolderOpenConfirmThreshold = 20;
             continue;
         }
         anyFolderExpanded = YES;
-        NSArray<NSString *> *entries =
-            [[fm contentsOfDirectoryAtPath:path error:nil]
-                sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
-        for (NSString *name in entries) {
-            if ([name hasPrefix:@"."]) continue;            // skip hidden
-            NSString *full = [path stringByAppendingPathComponent:name];
-            BOOL childIsDir = NO;
-            [fm fileExistsAtPath:full isDirectory:&childIsDir];
-            if (childIsDir) continue;                       // skip subfolders
-            [result addObject:full];
+        if (recursive) {
+            // Whole tree. NSDirectoryEnumerationSkipsHiddenFiles drops dot-files
+            // and dot-directories; package directories (.app, .bundle, …) are
+            // directories too, so skip their descendants explicitly — opening
+            // the internals of an app bundle is never what a folder drop means.
+            NSURL *dirURL = [NSURL fileURLWithPath:path isDirectory:YES];
+            NSDirectoryEnumerator<NSURL *> *en = [fm enumeratorAtURL:dirURL
+                                         includingPropertiesForKeys:@[NSURLIsDirectoryKey, NSURLIsPackageKey]
+                                                            options:NSDirectoryEnumerationSkipsHiddenFiles
+                                                       errorHandler:nil];
+            for (NSURL *fileURL in en) {
+                NSNumber *isDirectory = nil;
+                [fileURL getResourceValue:&isDirectory forKey:NSURLIsDirectoryKey error:nil];
+                if (isDirectory.boolValue) {
+                    NSNumber *isPackage = nil;
+                    [fileURL getResourceValue:&isPackage forKey:NSURLIsPackageKey error:nil];
+                    if (isPackage.boolValue) [en skipDescendants];
+                    continue;                               // folders are not opened
+                }
+                [result addObject:fileURL.path];
+            }
+        } else {
+            // Top level only — the documented bare-folder CLI behaviour (#131).
+            NSArray<NSString *> *entries =
+                [[fm contentsOfDirectoryAtPath:path error:nil]
+                    sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
+            for (NSString *name in entries) {
+                if ([name hasPrefix:@"."]) continue;        // skip hidden
+                NSString *full = [path stringByAppendingPathComponent:name];
+                BOOL childIsDir = NO;
+                [fm fileExistsAtPath:full isDirectory:&childIsDir];
+                if (childIsDir) continue;                   // skip subfolders
+                [result addObject:full];
+            }
         }
     }
+
+    // Deterministic tab order for folder expansions (depth-first, path-sorted).
+    [result sortUsingSelector:@selector(localizedStandardCompare:)];
 
     if (anyFolderExpanded && result.count > kFolderOpenConfirmThreshold) {
         NSAlert *alert = [[NSAlert alloc] init];
@@ -405,7 +433,7 @@ static const NSUInteger kFolderOpenConfirmThreshold = 20;
             // Bare folder (no -r / -openFoldersAsWorkspace): open its
             // top-level files — same behaviour as a folder handed to an
             // already-running instance (issue #131).
-            NSArray<NSString *> *folderFiles = [self _expandFolderArguments:@[path]];
+            NSArray<NSString *> *folderFiles = [AppDelegate expandFolderPaths:@[path] recursive:NO];
             for (NSString *folderFile in folderFiles) {
                 [mwc openFileAtPath:folderFile];
                 lastEditor = [mwc currentEditor];
@@ -491,7 +519,7 @@ static const NSUInteger kFolderOpenConfirmThreshold = 20;
         return YES;
     }
     // A folder argument expands to its top-level files (issue #131).
-    NSArray<NSString *> *files = [self _expandFolderArguments:@[filename]];
+    NSArray<NSString *> *files = [AppDelegate expandFolderPaths:@[filename] recursive:NO];
     if (files.count == 0) return YES;  // empty folder, or large-open declined
     MainWindowController *mwc = [self _activeWindowController];
     for (NSString *path in files) {
@@ -512,7 +540,7 @@ static const NSUInteger kFolderOpenConfirmThreshold = 20;
         return;
     }
     // Folder arguments expand to their top-level files (issue #131).
-    NSArray<NSString *> *files = [self _expandFolderArguments:filenames];
+    NSArray<NSString *> *files = [AppDelegate expandFolderPaths:filenames recursive:NO];
     if (files.count > 0) {
         MainWindowController *mwc = [self _activeWindowController];
         for (NSString *path in files) {
@@ -555,7 +583,7 @@ static const NSUInteger kFolderOpenConfirmThreshold = 20;
         return;
     }
 
-    NSArray<NSString *> *files = [self _expandFolderArguments:paths];
+    NSArray<NSString *> *files = [AppDelegate expandFolderPaths:paths recursive:NO];
     if (files.count == 0) return;  // empty folder, or large-open declined
     MainWindowController *mwc = [self _activeWindowController];
     for (NSString *path in files) {

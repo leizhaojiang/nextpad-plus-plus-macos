@@ -33,6 +33,17 @@ NS_ASSUME_NONNULL_BEGIN
 /// Action wired to "Check for Updates..." menu item.
 - (void)checkForUpdates:(id)sender;
 
+/// Expand a mixed list of dropped / OS-provided paths for opening: plain files
+/// pass through, folders expand to the files they contain. With `recursive` the
+/// whole tree is walked (what a folder drop means); without it only the folder's
+/// top level is taken (the documented bare-folder CLI behaviour, issue #131).
+/// Hidden entries and package directories (.app, .bundle, …) are skipped either
+/// way. Shows a confirmation when the expansion exceeds the folder-open
+/// threshold; returns nil when the user cancels, so callers must treat nil as
+/// "do nothing".
++ (nullable NSArray<NSString *> *)expandFolderPaths:(NSArray<NSString *> *)paths
+                                          recursive:(BOOL)recursive;
+
 @end
 
 NS_ASSUME_NONNULL_END
