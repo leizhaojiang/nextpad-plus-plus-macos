@@ -64,7 +64,12 @@ NSColor * _Nullable NPPColorFromHex(NSString * _Nullable hex) {
 }
 
 static NSString *hexFromColor(NSColor *c) {
-    NSColor *r = [c colorUsingColorSpace:[NSColorSpace genericRGBColorSpace]];
+    // Serialise in sRGB — the space NPPColorFromHex parses into ({RRGGBB}
+    // strings in stylers.xml / UDL XML are sRGB values). Converting through
+    // genericRGB instead shifted every colour on each save (A6E1A7 → 97DD96),
+    // so a colour set in the Style Configurator came back visibly different —
+    // and with repeated saves it kept drifting.
+    NSColor *r = [c colorUsingColorSpace:[NSColorSpace sRGBColorSpace]];
     unsigned int rv = (unsigned int)(r.redComponent   * 255.0 + 0.5);
     unsigned int gv = (unsigned int)(r.greenComponent * 255.0 + 0.5);
     unsigned int bv = (unsigned int)(r.blueComponent  * 255.0 + 0.5);
@@ -153,6 +158,16 @@ static NSString *modelLexerID(NSString *themeID) {
     return result;
 }
 
+- (NSMutableArray<NPPLexer *> *)_parseModelXML {
+    // Bundled model only — the "shipped defaults" every user override is a
+    // difference from.
+    NSURL *url = [[NSBundle mainBundle] URLForResource:@"stylers.model" withExtension:@"xml"];
+    if (!url) { NSLog(@"[NPPStyleStore] stylers.model.xml not found"); return [NSMutableArray new]; }
+    NSData *data = [NSData dataWithContentsOfURL:url];
+    NSXMLDocument *doc = [[NSXMLDocument alloc] initWithData:data options:0 error:nil];
+    return doc ? [self _parseXML:doc] : [NSMutableArray new];
+}
+
 - (NSMutableArray<NPPLexer *> *)_parseDefaultXML {
     // Read from ~/Library/Application Support/Nextpad++/stylers.xml first (user-editable), fall back to bundle model.
     NSString *userStylers = NppConfigSubpath(@"stylers.xml");
@@ -186,11 +201,19 @@ static NSString *modelLexerID(NSString *themeID) {
 // ── Load theme from XML ───────────────────────────────────────────────────────
 
 - (NSArray<NPPLexer *> *)lexersForTheme:(NSString *)themeName {
-    // Start from clean defaults
-    NSMutableArray<NPPLexer *> *result = [self _parseDefaultXML];
+    // Start from the user-editable stylers.xml (the live "Default" theme).
+    return [self _lexersForTheme:themeName base:[self _parseDefaultXML]];
+}
 
+- (NSArray<NPPLexer *> *)modelBasedLexersForTheme:(NSString *)themeName {
+    // Same merge, but always from the bundled model — never the user-editable
+    // stylers.xml (see the doc comment in the header).
+    return [self _lexersForTheme:themeName base:[self _parseModelXML]];
+}
+
+- (NSArray<NPPLexer *> *)_lexersForTheme:(NSString *)themeName base:(NSMutableArray<NPPLexer *> *)result {
     if ([themeName isEqualToString:kDefaultThemeName] || !themeName.length) {
-        return result; // "Default (stylers.xml)" = pure model defaults
+        return result; // "Default (stylers.xml)" = base as-is
     }
 
     // Find theme XML: check user ~/Library/Application Support/Nextpad++/themes/ first, then bundle
@@ -334,11 +357,15 @@ static NSString *_userThemesDir(void) {
     NSMutableArray<NPPLexer *> *base = [[self lexersForTheme:savedTheme] mutableCopy];
 
     // Apply user overrides on top
-    NSDictionary *saved = [ud dictionaryForKey:kNSDefaultsStyleKey];
-    if (saved) [self _applyUserOverrides:saved to:base];
+    [self applySavedOverridesToLexers:base];
 
     _lexers = base;
     [self _buildDict];
+}
+
+- (void)applySavedOverridesToLexers:(NSMutableArray<NPPLexer *> *)lexers {
+    NSDictionary *saved = [[NSUserDefaults standardUserDefaults] dictionaryForKey:kNSDefaultsStyleKey];
+    if (saved.count) [self _applyUserOverrides:saved to:lexers];
 }
 
 - (void)_buildDict {
@@ -426,8 +453,11 @@ static NSString *_userThemesDir(void) {
     _activeThemeName = themeName;  // Set BEFORE preview so applyThemeColors reads the correct theme name
     [self previewLexers:lexers];
 
-    // Serialize diffs against clean theme baseline (no user overrides)
-    NSArray<NPPLexer *> *baseline = [self lexersForTheme:themeName];
+    // Serialize diffs against the *bundled model* (never the user-editable
+    // stylers.xml, which this very save also rewrites — diffing against it made
+    // the stored overrides shrink to just the current session's edits and
+    // silently dropped colours saved earlier).
+    NSArray<NPPLexer *> *baseline = [self modelBasedLexersForTheme:themeName];
     NSMutableDictionary<NSString *, NPPLexer *> *baseDict = [NSMutableDictionary new];
     for (NPPLexer *lex in baseline) baseDict[lex.lexerID] = lex;
 
@@ -942,8 +972,15 @@ static NSString *_userThemesDir(void) {
 
 - (void)_resetWorkingCopyForTheme:(NSString *)themeName {
     NSArray<NPPLexer *> *base = [[NPPStyleStore sharedStore] lexersForTheme:themeName];
-    _workingLexers = [NSMutableArray new];
-    for (NPPLexer *lex in base) [_workingLexers addObject:[lex copy]];
+    NSMutableArray<NPPLexer *> *working = [NSMutableArray new];
+    for (NPPLexer *lex in base) [working addObject:[lex copy]];
+    // Seed from what the user actually sees (theme + saved overrides). Without
+    // the overrides the swatches showed raw theme colours and Save & Close
+    // serialised a diff that contained only this session's edits — replacing
+    // NPPStyleOverrides and silently dropping every older override (e.g. the
+    // Default Style background saved in a previous session).
+    [[NPPStyleStore sharedStore] applySavedOverridesToLexers:working];
+    _workingLexers = working;
     _workingTheme = themeName;
 }
 
