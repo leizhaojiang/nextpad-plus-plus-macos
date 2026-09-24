@@ -1046,22 +1046,29 @@ static sptr_t _srSciColor(NSColor *c) {
         sptr_t len = lineEndPos - linePos;
         if (len <= 0) continue;
 
-        char firstChar = (char)[_sci message:SCI_GETCHARAT wParam:(uptr_t)linePos];
+        // Classify by the kind recorded while appending (addResults:), not by
+        // the first character: result lines no longer carry the "\t" / space
+        // prefixes, so a first-character test made every result line look like
+        // a "search header" (always visible) — the filter silently did nothing
+        // — and lines whose text begins with a space looked like file headers
+        // (they disappeared).
+        int kind = ((size_t)line < _lineKinds.size())
+                 ? _lineKinds[(size_t)line] : SearchResultLineKindResult;
 
-        if (firstChar != '\t' && firstChar != ' ') {
+        if (kind == SearchResultLineKindSearchHeader) {
             // Search header — always visible
             [searchHeaders addIndex:(NSUInteger)line];
             [matchingLines addIndex:(NSUInteger)line];
             continue;
         }
 
-        if (firstChar == ' ') {
+        if (kind == SearchResultLineKindFileHeader) {
             // File header — remember it, show later if children match
             currentFileHeader = line;
             continue;
         }
 
-        // Result line (tab-prefixed) — check if it matches filter
+        // Result line — check if it matches filter
         char *buf = (char *)calloc(len + 1, 1);
         struct Sci_TextRangeFull tr = {};
         tr.chrg.cpMin = linePos;
