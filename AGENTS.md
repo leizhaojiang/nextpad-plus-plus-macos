@@ -60,6 +60,8 @@ Both big controllers have `#pragma mark` section maps — use them instead of re
 
 **Performance**
 - `SCN_UPDATEUI` runs on every scroll / cursor / content tick: keep per-update work bounded to the visible viewport. `updateSmartHighlight` and `updateClickableLinks` are the models — both bound their scan (NPP parity: `SmartHighlighter.cpp` scans visible lines only, `MAXLINEHIGHLIGHT 400`). A whole-document scan here costs hundreds of ms per scroll frame on a 50 MB log. See `docs/PROJECT_SCAN.md` §5.5 for measurements and the re-measure recipe.
+- `updateClickableLinks` is additionally **debounced** (80 ms, `_scheduleClickableLinksUpdate`) because its `NSDataDetector` + regex scan is ~55% of a scroll frame's paint time and a trackpad fires 60-120 updates/s — do not move it back to the synchronous per-update path.
+- Measured with an injected-dylib scroll burst + `sample`: before the debounce, `updateClickableLinks` accounted for 38 of the samples inside `SCIContentView drawRect:`; after, 4. Re-measure with the ready-made burst/sample recipe in `docs/PROJECT_SCAN.md` §5.10.
 
 **Menus**
 - The menu bar mixes the Windows Notepad++ layout with the macOS-HIG reorganization (`f517dc6`), on explicit user request: `Settings`, `Encoding` and `Tools` are top-level menus again, in the Windows order (编码 between View and Language, 设置 after Language, 工具 after Settings).

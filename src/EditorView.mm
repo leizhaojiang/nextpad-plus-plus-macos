@@ -284,6 +284,8 @@ static NSUInteger nppLargeFileThreshold(void) {
 
     // External file-change monitoring (polling — avoids FSEvents timing issues)
     NSTimer           *_fileMonitorTimer;
+    // Debounce for the clickable-link scan (see _scheduleClickableLinksUpdate).
+    NSTimer           *_linkScanTimer;
     NSDate            *_lastKnownModDate; // mtime recorded after each load/save
     BOOL               _externalChangePending;
     BOOL               _monitoringMode;   // tail -f: auto-reload silently
@@ -349,11 +351,14 @@ static NSUInteger nppLargeFileThreshold(void) {
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [_fileMonitorTimer invalidate];
+    [_linkScanTimer invalidate];
 }
 
 - (void)prepareForClose {
     [_fileMonitorTimer invalidate];
     _fileMonitorTimer = nil;
+    [_linkScanTimer invalidate];
+    _linkScanTimer = nil;
     [_spellTimer invalidate];
     _spellTimer = nil;
 
@@ -4057,6 +4062,32 @@ static NSRegularExpression *nppClickableSchemeRegex(NSString *schemes) {
     }
 }
 
+/// Debounced clickable-link scan.
+///
+/// `updateClickableLinks` runs NSDataDetector plus a custom-scheme regex over
+/// the visible slice. Measured on a 50 MB log, that is ~55% of the paint time
+/// of a scroll frame (ICU regex + DataDetectorsCore dominate the samples), and
+/// a trackpad fires 60-120 SCN_UPDATEUI events per second — scanning on every
+/// one saturates the main thread, so the view keeps repainting while the
+/// scroll visibly stalls. Mark links once the view settles instead: the
+/// indicators are anchored to document positions, so existing marks stay
+/// correct while scrolling and the newly visible slice gets marked when the
+/// gesture ends. `NSTimer` in the default run-loop mode is naturally deferred
+/// during event tracking, which is exactly the desired behaviour.
+- (void)_scheduleClickableLinksUpdate {
+    [_linkScanTimer invalidate];
+    _linkScanTimer = [NSTimer scheduledTimerWithTimeInterval:0.08
+                                                      target:self
+                                                    selector:@selector(_runScheduledLinkScan:)
+                                                    userInfo:nil
+                                                     repeats:NO];
+}
+
+- (void)_runScheduledLinkScan:(NSTimer *)timer {
+    _linkScanTimer = nil;
+    [self updateClickableLinks];
+}
+
 // Opens the clicked link if the double-click landed on a clickable-link
 // indicator. Returns YES if it handled the click (so the caller skips the
 // delimiter/word handlers). Only plain double-clicks (no modifiers) qualify —
@@ -4824,8 +4855,10 @@ static NSSet<NSString *> *_cLikeLanguages() {
             [self updateSmartHighlight];
             // Re-mark links only when content or the viewport changed — a
             // bare cursor move (selection-only) can't change link positions.
+            // Debounced: the scan is the dominant per-scroll cost (see
+            // _scheduleClickableLinksUpdate).
             if (notification->updated & (SC_UPDATE_CONTENT | SC_UPDATE_V_SCROLL | SC_UPDATE_H_SCROLL))
-                [self updateClickableLinks];
+                [self _scheduleClickableLinksUpdate];
             if (_spellCheckEnabled) [self _scheduleSpellCheck];
             [[NSNotificationCenter defaultCenter]
                 postNotificationName:EditorViewCursorDidMoveNotification
