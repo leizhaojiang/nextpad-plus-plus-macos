@@ -158,16 +158,6 @@ static NSString *modelLexerID(NSString *themeID) {
     return result;
 }
 
-- (NSMutableArray<NPPLexer *> *)_parseModelXML {
-    // Bundled model only — the "shipped defaults" every user override is a
-    // difference from.
-    NSURL *url = [[NSBundle mainBundle] URLForResource:@"stylers.model" withExtension:@"xml"];
-    if (!url) { NSLog(@"[NPPStyleStore] stylers.model.xml not found"); return [NSMutableArray new]; }
-    NSData *data = [NSData dataWithContentsOfURL:url];
-    NSXMLDocument *doc = [[NSXMLDocument alloc] initWithData:data options:0 error:nil];
-    return doc ? [self _parseXML:doc] : [NSMutableArray new];
-}
-
 - (NSMutableArray<NPPLexer *> *)_parseDefaultXML {
     // Read from ~/Library/Application Support/Nextpad++/stylers.xml first (user-editable), fall back to bundle model.
     NSString *userStylers = NppConfigSubpath(@"stylers.xml");
@@ -203,12 +193,6 @@ static NSString *modelLexerID(NSString *themeID) {
 - (NSArray<NPPLexer *> *)lexersForTheme:(NSString *)themeName {
     // Start from the user-editable stylers.xml (the live "Default" theme).
     return [self _lexersForTheme:themeName base:[self _parseDefaultXML]];
-}
-
-- (NSArray<NPPLexer *> *)modelBasedLexersForTheme:(NSString *)themeName {
-    // Same merge, but always from the bundled model — never the user-editable
-    // stylers.xml (see the doc comment in the header).
-    return [self _lexersForTheme:themeName base:[self _parseModelXML]];
 }
 
 - (NSArray<NPPLexer *> *)_lexersForTheme:(NSString *)themeName base:(NSMutableArray<NPPLexer *> *)result {
@@ -453,15 +437,25 @@ static NSString *_userThemesDir(void) {
     _activeThemeName = themeName;  // Set BEFORE preview so applyThemeColors reads the correct theme name
     [self previewLexers:lexers];
 
-    // Serialize diffs against the *bundled model* (never the user-editable
-    // stylers.xml, which this very save also rewrites — diffing against it made
-    // the stored overrides shrink to just the current session's edits and
-    // silently dropped colours saved earlier).
-    NSArray<NPPLexer *> *baseline = [self modelBasedLexersForTheme:themeName];
+    // Serialize the overrides by MERGING this session's changes into the ones
+    // already saved:
+    //   * baseline = the state the user was looking at when the session started
+    //     (theme + saved overrides), never the bundled model: a value that
+    //     happens to equal the shipped default (e.g. the model's "Courier New"
+    //     on the Global override row) is still a real change when the user's
+    //     stylers.xml holds something else — comparing against the model treated
+    //     it as "unchanged", wrote nothing, and the stale XML value came back
+    //     after the next launch.
+    //   * the dictionary is never rebuilt: properties the user did not touch keep
+    //     their previously saved override.
+    NSMutableArray<NPPLexer *> *baselineLexers = [[self lexersForTheme:themeName] mutableCopy];
+    [self applySavedOverridesToLexers:baselineLexers];
     NSMutableDictionary<NSString *, NPPLexer *> *baseDict = [NSMutableDictionary new];
-    for (NPPLexer *lex in baseline) baseDict[lex.lexerID] = lex;
+    for (NPPLexer *lex in baselineLexers) baseDict[lex.lexerID] = lex;
 
-    NSMutableDictionary *overrides = [NSMutableDictionary new];
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    NSMutableDictionary *overrides = [[ud dictionaryForKey:kNSDefaultsStyleKey] mutableCopy]
+                                   ?: [NSMutableDictionary new];
     BOOL isGlobal;
     for (NPPLexer *lex in _lexers) {
         NPPLexer *baseLex = baseDict[lex.lexerID];
@@ -492,7 +486,6 @@ static NSString *_userThemesDir(void) {
         }
     }
 
-    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
     [ud setObject:overrides forKey:kNSDefaultsStyleKey];
     [ud setObject:themeName forKey:kNSDefaultsThemeKey];
 

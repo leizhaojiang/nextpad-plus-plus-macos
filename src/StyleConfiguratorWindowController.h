@@ -77,11 +77,6 @@ NSColor * _Nullable NPPColorFromHex(NSString * _Nullable hex);
 /// Returns a fully-merged array (model defaults + theme overrides).
 - (NSArray<NPPLexer *> *)lexersForTheme:(NSString *)themeName;
 
-/// Theme styles with the *bundled model* as the base instead of the
-/// user-editable stylers.xml. Used as the diff baseline when saving, so the
-/// stored overrides always describe every difference from the shipped defaults.
-- (NSArray<NPPLexer *> *)modelBasedLexersForTheme:(NSString *)themeName;
-
 /// Apply the saved NPPStyleOverrides on top of freshly-parsed lexers. Both the
 /// store's own load and the Style Configurator's working copy call this so they
 /// start from what the user actually sees — otherwise Save & Close diffs the

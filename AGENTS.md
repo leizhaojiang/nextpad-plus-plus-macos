@@ -6,7 +6,7 @@ Native macOS port of the Notepad++ codebase: C++17 + Objective-C++ (ARC), progra
 
 ```bash
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
-cmake --build build-release -j            # bundle: build-release/Nextpad++.app
+cmake --build build-release -j            # bundle: build-release/Notepad++.app
 
 bash regex/test/run.sh                    # regex backend self-tests (exit non-zero on failure)
 bash regex/test/run_boost.sh
@@ -16,7 +16,7 @@ No CI and no unit-test framework. Those two scripts plus `test_plugins/` (dlopen
 
 A full rebuild still emits **deprecation warnings** (`NSFilenamesPboardType`, `-openFile:`, `-openURLs:withAppBundleIdentifier:…`, `CC_MD5`). They are pre-existing and do not fail the build — `CC_MD5` in particular must stay, it backs the user-visible MD5 hash feature. The build is green; do not treat warnings as errors.
 
-Installer (local script — `tools/` is gitignored): `tools/build-release.sh` builds universal Release and produces `downloads/Nextpad++v<version>.dmg` with the Finder layout. `CODESIGN_IDENTITY` / `NOTARY_PROFILE` env vars add Developer ID signing and notarization; without them the DMG keeps the ad-hoc signature and opens on this Mac only. Details: `docs/PROJECT_SCAN.md` §8 (打包与发布).
+Installer (local script — `tools/` is gitignored): `tools/build-release.sh` builds universal Release and produces `downloads/Notepad++v<version>.dmg` with the Finder layout. `CODESIGN_IDENTITY` / `NOTARY_PROFILE` env vars add Developer ID signing and notarization; without them the DMG keeps the ad-hoc signature and opens on this Mac only. Details: `docs/PROJECT_SCAN.md` §8 (打包与发布).
 
 Source lists in `CMakeLists.txt` are explicit (`APP_SRCS` / `APP_HEADERS`): a new source file needs a CMake edit. Scintilla/Lexilla sources are globbed without `CONFIGURE_DEPENDS`, so re-run cmake after touching those trees.
 
@@ -63,7 +63,7 @@ Both big controllers have `#pragma mark` section maps — use them instead of re
 
 **Theming / style application**
 - "Default Style" (style 32) only paints the canvas. Every language style carries its own `bgColor` in `stylers.xml` (shipped files say `FFFFFF`), so changing only the Default Style background leaves white glyph backgrounds in every syntax-highlighted language — Windows NPP behaves identically. The knob that repaints everything is **Global override → background** (`Force background color for all styles` / 中文 "使用全局背景色"); it persists as `config.xml <GUIConfig name="globalOverride" bg="yes">`, which `readConfigXML` re-imposes over NSUserDefaults at launch, so both stores must agree. Decorative styles follow NPP: indent guide (37) and brace highlight (34) are overridden, the line-number margin (33) deliberately is not.
-- Style saving (`StyleConfiguratorWindowController` / `NPPStyleStore`) has three invariants; breaking any of them silently loses or shifts a user's colours: the configurator's working copy must start from **theme + saved overrides** (`applySavedOverridesToLexers:`, otherwise Save & Close replaces `NPPStyleOverrides` with just this session's edits); `commitLexers:` must diff against **`modelBasedLexersForTheme:`** (bundled model + theme — never the user-editable `stylers.xml`, which the same save rewrites, or previously saved entries stop being differences and vanish); and `hexFromColor` must serialise in **sRGB**, the space `NPPColorFromHex` parses, or every save shifts every colour (`A6E1A7` → `97DD96`).
+- Style saving (`StyleConfiguratorWindowController` / `NPPStyleStore`) has three invariants; breaking any of them silently loses or shifts a user's settings: the configurator's working copy must start from **theme + saved overrides** (`applySavedOverridesToLexers:`); `commitLexers:` must diff against the **effective state** (`lexersForTheme:` + the saved overrides) and **merge** the result into the saved dictionary, never rebuild it — a value that happens to equal the shipped default (e.g. the model's "Courier New" font on the Global override row) is still a real change when the user's `stylers.xml` still holds an older value, and comparing against the bundled model silently dropped it (the font reverted after the next launch); and `hexFromColor` must serialise in **sRGB**, the space `NPPColorFromHex` parses (`genericRGB` shifted every colour on every save).
 - Every path that pushes per-style attributes must apply the override through `-[NPPStyleStore styleByApplyingGlobalOverride:]` — Windows pushes built-in lexer styles *and* UDL styles through `ScintillaEditView::setStyle()`. Current callers: `EditorView applyLexerColors:` and `UserDefineLangManager applyLanguage:toScintillaView:` (markdown ships as a UDL, so it needs the same treatment). The helper returns the same object when no force-flag is on; an unset override attribute comes back cleared, meaning "skip the `SCI_STYLESET*` call and keep `STYLE_DEFAULT`". See `docs/PROJECT_SCAN.md` §5.14.
 
 **Performance**
