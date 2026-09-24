@@ -245,6 +245,11 @@ struct _SRLineInfo {
     _filterField.font = [NSFont systemFontOfSize:11];
     _filterField.placeholderString = [loc translate:@"Type to search\u2026"];
     _filterField.delegate = (id)self;
+    // Let the field absorb every spare point of the bar (owner request: at its
+    // 150pt minimum it stayed tiny inside a wide panel). Everything else in the
+    // row keeps the default hugging, so the field is the one that grows.
+    [_filterField setContentHuggingPriority:1
+                             forOrientation:NSLayoutConstraintOrientationHorizontal];
     [_filterBar addSubview:_filterField];
 
     _filterMatchCase = [NSButton checkboxWithTitle:[loc translate:@"Match case"] target:nil action:nil];
@@ -279,7 +284,17 @@ struct _SRLineInfo {
     [filterClose.heightAnchor constraintEqualToConstant:18].active = YES;
     [_filterBar addSubview:filterClose];
 
+    // Close the row: tie its tail to the close button so the label … close
+    // chain spans the whole bar. The input field (content hugging 1) is then
+    // the only view that can stretch and takes all the free space — without
+    // this pin Auto Layout just left the gap empty and the field stayed at its
+    // 150pt minimum (owner request: make the field longer).
+    NSLayoutConstraint *filterStatusPin =
+        [_filterStatusLabel.trailingAnchor constraintEqualToAnchor:filterClose.leadingAnchor constant:-8];
+    filterStatusPin.priority = NSLayoutPriorityDefaultHigh; // yields to the field's 150pt minimum on narrow panels
+
     [NSLayoutConstraint activateConstraints:@[
+        filterStatusPin,
         [filterLabel.leadingAnchor constraintEqualToAnchor:_filterBar.leadingAnchor constant:6],
         [filterLabel.centerYAnchor constraintEqualToAnchor:_filterBar.centerYAnchor],
         [_filterField.leadingAnchor constraintEqualToAnchor:filterLabel.trailingAnchor constant:4],
