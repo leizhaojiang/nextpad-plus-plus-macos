@@ -590,6 +590,10 @@ static NSString *normalizeForLookup(NSString *s) {
         @"replace all":                    @"dlg:Find:1609",
         @"replace":                        @"dlg:Find:1608",
         @"match case":                     @"dlg:IncrementalFind:1685",
+        // Find window's document-wide buttons: macOS wording vs Windows.
+        @"find in current document":        @"dlg:Find:1641",  // "Find All in Current Document"
+        @"find in all documents":           @"dlg:Find:1636",  // "Find All in All Opened Documents"
+        @"replace in all documents":        @"dlg:Find:1635",  // "Replace All in All Opened Documents"
 
         // Find in Files / Find in Projects
         @"find in files":                  @"cmd:43013",
