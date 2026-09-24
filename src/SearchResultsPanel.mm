@@ -133,12 +133,10 @@ struct _SRLineInfo {
     [_sci message:SCI_SETPROPERTY wParam:(uptr_t)"fold" lParam:(sptr_t)"1"];
     [_sci message:SCI_SETMARGINTYPEN  wParam:2 lParam:SC_MARGIN_SYMBOL];
     [_sci message:SCI_SETMARGINMASKN  wParam:2 lParam:SC_MASK_FOLDERS];
-    // Margin 2 (the fold margin) stays at width 0: the panel shows flush-left
-    // lines (owner request) and no fold markers were being drawn, so the strip
-    // was pure whitespace. Folding itself is unaffected — the fold levels still
-    // come from the lexer and the Fold/Unfold menu and context-menu commands
-    // still work; widen this margin again if clickable fold markers are wanted.
-    [_sci message:SCI_SETMARGINWIDTHN wParam:2 lParam:0];
+    // Margin 2 is the fold margin: keep it wide enough for the clickable +/-
+    // markers (owner request: the text itself must start right here — the old
+    // "\t" indent pushed result lines to 88px, the fold margin alone is 16px).
+    [_sci message:SCI_SETMARGINWIDTHN wParam:2 lParam:16];
     [_sci message:SCI_SETMARGINSENSITIVEN wParam:2 lParam:1];
     [_sci message:SCI_SETAUTOMATICFOLD wParam:SC_AUTOMATICFOLD_SHOW | SC_AUTOMATICFOLD_CLICK | SC_AUTOMATICFOLD_CHANGE];
 
