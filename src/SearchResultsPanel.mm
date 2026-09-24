@@ -578,6 +578,20 @@ static sptr_t _srSciColor(NSColor *c) {
     // Purge previous results if enabled
     if (_purgeBeforeSearch) [self clearAll];
 
+    // Fold the previous searches' blocks so the new search lands on a clean,
+    // unfolded block of its own (owner request: "搜索一次结果，自动折叠其他的
+    // 搜索结果"). Collapsing a *search-header* line hides everything nested
+    // under it (file headers + every hit) because the fold levels are
+    // search(0) < file(1) < result(2). With purge enabled the old lines are
+    // already gone, so there is nothing to collapse.
+    if (!_purgeBeforeSearch) {
+        for (size_t line = 0; line < _lineKinds.size(); line++) {
+            if (_lineKinds[line] != SearchResultLineKindSearchHeader) continue;
+            if ([_sci message:SCI_GETFOLDEXPANDED wParam:(uptr_t)line])
+                [_sci message:SCI_TOGGLEFOLD wParam:(uptr_t)line];
+        }
+    }
+
     [_sci message:SCI_SETREADONLY wParam:0];
 
     // Count total hits
