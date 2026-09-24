@@ -27,6 +27,12 @@ NS_ASSUME_NONNULL_BEGIN
            options:(NPPFindOptions *)opts
       filesSearched:(NSInteger)filesSearched;
 
+/// Responder-chain action for the Search menu item "Find in these search
+/// results..." (hence assignable in the Shortcut Mapper). It is only reached
+/// while this panel — or its Scintilla view — is the first responder, so the
+/// menu item disables itself automatically when another view has focus.
+- (void)findInSearchResults:(id)sender;
+
 /// Clear all search results.
 - (void)clearAll;
 

@@ -435,6 +435,10 @@ static NSMenu *buildLanguageMenu() {
     [searchMenu addItem:item(@"Incremental Search", @selector(showIncrementalSearch:), @"i")];
     addSep(searchMenu);
     [searchMenu addItem:item(@"Search Results Window",  @selector(showSearchResultsWindow:), @"")];
+    // Panel-scoped command: reaches SearchResultsPanel through the responder
+    // chain, so the item is enabled only while the results panel has focus.
+    // No default key equivalent: assign one in Settings > Shortcut Mapper.
+    [searchMenu addItem:item(@"Find in these search results...", @selector(findInSearchResults:), @"")];
     [searchMenu addItem:itemFn(@"Next Search Result",     @selector(nextSearchResult:),     NSF4FunctionKey, 0)];
     [searchMenu addItem:itemFn(@"Previous Search Result", @selector(previousSearchResult:), NSF4FunctionKey, NSEventModifierFlagShift)];
     addSep(searchMenu);

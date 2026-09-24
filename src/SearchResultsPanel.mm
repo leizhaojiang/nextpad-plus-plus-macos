@@ -81,23 +81,36 @@ struct _SRLineInfo {
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(_darkModeChanged:)
                                                      name:NPPDarkModeChangedNotification object:nil];
 
-        // Intercept Cmd+C when our ScintillaView has focus — route to visibility-aware copy
+        // Intercept Cmd+C / Cmd+F while our ScintillaView has focus. Cmd+C
+        // routes to the visibility-aware copy; Cmd+F opens the in-results
+        // filter ("Find in these search results…") — the owner asked for that
+        // context-sensitive reuse, so the editor keeps the global Find dialog.
+        // ⇧⌘F still reaches Find in Files: charactersIgnoringModifiers keeps
+        // the shifted form ("F"), which matches neither branch below.
         __weak typeof(self) wSelf = self;
         _keyMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent *(NSEvent *event) {
             typeof(self) sSelf = wSelf;
             if (!sSelf) return event;
-            if ((event.modifierFlags & NSEventModifierFlagCommand) &&
-                [event.charactersIgnoringModifiers isEqualToString:@"c"]) {
-                // Check if our ScintillaView (or its content view) is the first responder
-                NSResponder *fr = event.window.firstResponder;
-                NSView *v = [fr isKindOfClass:[NSView class]] ? (NSView *)fr : nil;
-                while (v) {
-                    if (v == sSelf->_sci) {
-                        [sSelf _copy:nil];
-                        return nil; // consume the event
-                    }
-                    v = v.superview;
-                }
+            if (!(event.modifierFlags & NSEventModifierFlagCommand)) return event;
+
+            // Is our ScintillaView (or its content view) the first responder?
+            NSResponder *fr = event.window.firstResponder;
+            NSView *v = [fr isKindOfClass:[NSView class]] ? (NSView *)fr : nil;
+            BOOL inPanel = NO;
+            while (v) {
+                if (v == sSelf->_sci) { inPanel = YES; break; }
+                v = v.superview;
+            }
+            if (!inPanel) return event;
+
+            NSString *ch = event.charactersIgnoringModifiers;
+            if ([ch isEqualToString:@"c"]) {
+                [sSelf _copy:nil];
+                return nil; // consume the event
+            }
+            if ([ch isEqualToString:@"f"]) {
+                [sSelf _findInResults:nil];
+                return nil; // consume the event
             }
             return event;
         }];
@@ -992,6 +1005,10 @@ static sptr_t _srSciColor(NSColor *c) {
 - (void)_togglePurge:(id)sender {
     _purgeBeforeSearch = !_purgeBeforeSearch;
     [[NSUserDefaults standardUserDefaults] setBool:_purgeBeforeSearch forKey:@"SearchResultsPurge"];
+}
+
+- (void)findInSearchResults:(id)sender {
+    [self _findInResults:sender];
 }
 
 - (void)_findInResults:(id)sender {
