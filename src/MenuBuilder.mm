@@ -402,40 +402,6 @@ static NSMenu *buildLanguageMenu() {
     [editMenu addItem:item(@"Shortcut Mapper…",    @selector(showShortcutMapper:),   @"")];
     [editMenu addItem:item(@"Edit Popup ContextMenu", @selector(editPopupContextMenu:), @"")];
 
-    // ── Edit ▸ Encoding (was top-level "Encoding" menu) — placed last ───────
-    addSep(editMenu);
-    NSMenu *encMenu = submenu(@"Encoding");
-    [encMenu addItem:item(@"ANSI",        @selector(setEncodingANSI:),      @"")];
-    [encMenu addItem:item(@"UTF-8",       @selector(setEncodingUTF8:),      @"")];
-    [encMenu addItem:item(@"UTF-8-BOM",   @selector(setEncodingUTF8BOM:),   @"")];
-    [encMenu addItem:item(@"UTF-16 BE BOM", @selector(setEncodingUTF16BEBOM:), @"")];
-    [encMenu addItem:item(@"UTF-16 LE BOM", @selector(setEncodingUTF16LEBOM:), @"")];
-
-    NSMenu *charSetMenu = submenu(@"Character sets");
-    NSMenu *csWestern = submenu(@"Western European");
-    [csWestern addItem:item(@"Latin-1 (ISO-8859-1)",  @selector(setEncodingLatin1:),    @"")];
-    [csWestern addItem:item(@"Latin-9 (ISO-8859-15)", @selector(setEncodingLatin9:),    @"")];
-    [csWestern addItem:item(@"Windows-1252",           @selector(setEncodingWindows1252:), @"")];
-    [charSetMenu addItem:withSubmenu(@"Western European", csWestern)];
-    [charSetMenu addItem:item(@"Central European (Windows-1250)", @selector(setEncodingWindows1250:), @"")];
-    [charSetMenu addItem:item(@"Cyrillic (Windows-1251)",          @selector(setEncodingWindows1251:), @"")];
-    [charSetMenu addItem:item(@"Greek (Windows-1253)",             @selector(setEncodingWindows1253:), @"")];
-    [charSetMenu addItem:item(@"Baltic (Windows-1257)",            @selector(setEncodingWindows1257:), @"")];
-    [charSetMenu addItem:item(@"Turkish (Windows-1254)",           @selector(setEncodingWindows1254:), @"")];
-    [charSetMenu addItem:item(@"Chinese Traditional (Big5)",       @selector(setEncodingBig5:),        @"")];
-    [charSetMenu addItem:item(@"Chinese Simplified (GB2312)",      @selector(setEncodingGB2312:),      @"")];
-    [charSetMenu addItem:item(@"Japanese (Shift-JIS)",             @selector(setEncodingShiftJIS:),    @"")];
-    [charSetMenu addItem:item(@"Korean (EUC-KR)",                  @selector(setEncodingEUCKR:),       @"")];
-    [encMenu addItem:withSubmenu(@"Character sets", charSetMenu)];
-    addSep(encMenu);
-
-    [encMenu addItem:item(@"Convert to ANSI",          @selector(convertToEncodingANSI:),      @"")];
-    [encMenu addItem:item(@"Convert to UTF-8",         @selector(convertToEncodingUTF8:),      @"")];
-    [encMenu addItem:item(@"Convert to UTF-8-BOM",     @selector(convertToEncodingUTF8BOM:),   @"")];
-    [encMenu addItem:item(@"Convert to UTF-16 BE BOM", @selector(convertToEncodingUTF16BEBOM:), @"")];
-    [encMenu addItem:item(@"Convert to UTF-16 LE BOM", @selector(convertToEncodingUTF16LEBOM:), @"")];
-    [editMenu addItem:withSubmenu(@"Encoding", encMenu)];
-
     // ── Search ────────────────────────────────────────────────────────────────
     NSMenuItem *searchItem = [[NSMenuItem alloc] init];
     [main addItem:searchItem];
@@ -746,6 +712,45 @@ static NSMenu *buildLanguageMenu() {
     addSep(viewMenu);
     [viewMenu addItem:item(@"Monitoring (tail -f)", @selector(toggleMonitoring:),    @"")];
 
+    // ── Encoding ──────────────────────────────────────────────────────────────
+    // Windows layout: top-level, between View and Language (the macOS-HIG reorg
+    // had nested it inside Edit; that copy is gone so each command has one
+    // route). Localizer maps the title via menuId "encoding".
+    NSMenuItem *encItem = [[NSMenuItem alloc] init];
+    [main addItem:encItem];
+    NSMenu *encMenu = submenu(@"Encoding");
+    encItem.submenu = encMenu;
+
+    [encMenu addItem:item(@"ANSI",        @selector(setEncodingANSI:),      @"")];
+    [encMenu addItem:item(@"UTF-8",       @selector(setEncodingUTF8:),      @"")];
+    [encMenu addItem:item(@"UTF-8-BOM",   @selector(setEncodingUTF8BOM:),   @"")];
+    [encMenu addItem:item(@"UTF-16 BE BOM", @selector(setEncodingUTF16BEBOM:), @"")];
+    [encMenu addItem:item(@"UTF-16 LE BOM", @selector(setEncodingUTF16LEBOM:), @"")];
+
+    NSMenu *charSetMenu = submenu(@"Character sets");
+    NSMenu *csWestern = submenu(@"Western European");
+    [csWestern addItem:item(@"Latin-1 (ISO-8859-1)",  @selector(setEncodingLatin1:),    @"")];
+    [csWestern addItem:item(@"Latin-9 (ISO-8859-15)", @selector(setEncodingLatin9:),    @"")];
+    [csWestern addItem:item(@"Windows-1252",           @selector(setEncodingWindows1252:), @"")];
+    [charSetMenu addItem:withSubmenu(@"Western European", csWestern)];
+    [charSetMenu addItem:item(@"Central European (Windows-1250)", @selector(setEncodingWindows1250:), @"")];
+    [charSetMenu addItem:item(@"Cyrillic (Windows-1251)",          @selector(setEncodingWindows1251:), @"")];
+    [charSetMenu addItem:item(@"Greek (Windows-1253)",             @selector(setEncodingWindows1253:), @"")];
+    [charSetMenu addItem:item(@"Baltic (Windows-1257)",            @selector(setEncodingWindows1257:), @"")];
+    [charSetMenu addItem:item(@"Turkish (Windows-1254)",           @selector(setEncodingWindows1254:), @"")];
+    [charSetMenu addItem:item(@"Chinese Traditional (Big5)",       @selector(setEncodingBig5:),        @"")];
+    [charSetMenu addItem:item(@"Chinese Simplified (GB2312)",      @selector(setEncodingGB2312:),      @"")];
+    [charSetMenu addItem:item(@"Japanese (Shift-JIS)",             @selector(setEncodingShiftJIS:),    @"")];
+    [charSetMenu addItem:item(@"Korean (EUC-KR)",                  @selector(setEncodingEUCKR:),       @"")];
+    [encMenu addItem:withSubmenu(@"Character sets", charSetMenu)];
+    addSep(encMenu);
+
+    [encMenu addItem:item(@"Convert to ANSI",          @selector(convertToEncodingANSI:),      @"")];
+    [encMenu addItem:item(@"Convert to UTF-8",         @selector(convertToEncodingUTF8:),      @"")];
+    [encMenu addItem:item(@"Convert to UTF-8-BOM",     @selector(convertToEncodingUTF8BOM:),   @"")];
+    [encMenu addItem:item(@"Convert to UTF-16 BE BOM", @selector(convertToEncodingUTF16BEBOM:), @"")];
+    [encMenu addItem:item(@"Convert to UTF-16 LE BOM", @selector(convertToEncodingUTF16LEBOM:), @"")];
+
     // ── Language ──────────────────────────────────────────────────────────────
     NSMenuItem *langMenuTop = [[NSMenuItem alloc] init];
     langMenuTop.tag = kMenuTagLanguage; // localization-stable lookup key
@@ -774,6 +779,40 @@ static NSMenu *buildLanguageMenu() {
     [settingsMenu addItem:withSubmenu(@"Import", importMenu)];
     addSep(settingsMenu);
     [settingsMenu addItem:item(@"Edit Popup ContextMenu", @selector(editPopupContextMenu:), @"")];
+
+    // ── Tools ─────────────────────────────────────────────────────────────────
+    // Windows layout: top-level, after Settings. The hash-generator submenus were
+    // folded into Plugins by the HIG reorg; Plugins no longer carries them, so
+    // each command has exactly one route (localizer: menuId "tools" /
+    // subMenuId "tools-md5" …).
+    NSMenuItem *toolsItem = [[NSMenuItem alloc] init];
+    [main addItem:toolsItem];
+    NSMenu *toolsMenu = submenu(@"Tools");
+    toolsItem.submenu = toolsMenu;
+
+    NSMenu *md5Menu = submenu(@"MD5");
+    [md5Menu addItem:item(@"Generate",                             @selector(hashMD5Generate:),    @"")];
+    [md5Menu addItem:item(@"Generate from Files…", @selector(hashMD5FromFiles:), @"")];
+    [md5Menu addItem:item(@"Generate from Selection into Clipboard", @selector(hashMD5ToClipboard:), @"")];
+    [toolsMenu addItem:withSubmenu(@"MD5", md5Menu)];
+
+    NSMenu *sha1Menu = submenu(@"SHA-1");
+    [sha1Menu addItem:item(@"Generate",                              @selector(hashSHA1Generate:),    @"")];
+    [sha1Menu addItem:item(@"Generate from Files…", @selector(hashSHA1FromFiles:), @"")];
+    [sha1Menu addItem:item(@"Generate from Selection into Clipboard",  @selector(hashSHA1ToClipboard:), @"")];
+    [toolsMenu addItem:withSubmenu(@"SHA-1", sha1Menu)];
+
+    NSMenu *sha256Menu = submenu(@"SHA-256");
+    [sha256Menu addItem:item(@"Generate",                            @selector(hashSHA256Generate:),    @"")];
+    [sha256Menu addItem:item(@"Generate from Files…", @selector(hashSHA256FromFiles:), @"")];
+    [sha256Menu addItem:item(@"Generate from Selection into Clipboard", @selector(hashSHA256ToClipboard:), @"")];
+    [toolsMenu addItem:withSubmenu(@"SHA-256", sha256Menu)];
+
+    NSMenu *sha512Menu = submenu(@"SHA-512");
+    [sha512Menu addItem:item(@"Generate",                            @selector(hashSHA512Generate:),    @"")];
+    [sha512Menu addItem:item(@"Generate from Files…", @selector(hashSHA512FromFiles:), @"")];
+    [sha512Menu addItem:item(@"Generate from Selection into Clipboard", @selector(hashSHA512ToClipboard:), @"")];
+    [toolsMenu addItem:withSubmenu(@"SHA-512", sha512Menu)];
 
     // ── Macro ─────────────────────────────────────────────────────────────────
     NSMenuItem *macroItem = [[NSMenuItem alloc] init];
@@ -835,30 +874,6 @@ static NSMenu *buildLanguageMenu() {
     [convMenu addItem:item(@"ASCII to Hex", @selector(asciiToHex:), @"")];
     [convMenu addItem:item(@"Hex to ASCII", @selector(hexToAscii:), @"")];
     [pluginsMenu addItem:withSubmenu(@"Converter", convMenu)];
-
-    NSMenu *md5Menu = submenu(@"MD5");
-    [md5Menu addItem:item(@"Generate",                             @selector(hashMD5Generate:),    @"")];
-    [md5Menu addItem:item(@"Generate from Files…", @selector(hashMD5FromFiles:), @"")];
-    [md5Menu addItem:item(@"Generate from Selection into Clipboard", @selector(hashMD5ToClipboard:), @"")];
-    [pluginsMenu addItem:withSubmenu(@"MD5", md5Menu)];
-
-    NSMenu *sha1Menu = submenu(@"SHA-1");
-    [sha1Menu addItem:item(@"Generate",                              @selector(hashSHA1Generate:),    @"")];
-    [sha1Menu addItem:item(@"Generate from Files…", @selector(hashSHA1FromFiles:), @"")];
-    [sha1Menu addItem:item(@"Generate from Selection into Clipboard",  @selector(hashSHA1ToClipboard:), @"")];
-    [pluginsMenu addItem:withSubmenu(@"SHA-1", sha1Menu)];
-
-    NSMenu *sha256Menu = submenu(@"SHA-256");
-    [sha256Menu addItem:item(@"Generate",                            @selector(hashSHA256Generate:),    @"")];
-    [sha256Menu addItem:item(@"Generate from Files…", @selector(hashSHA256FromFiles:), @"")];
-    [sha256Menu addItem:item(@"Generate from Selection into Clipboard", @selector(hashSHA256ToClipboard:), @"")];
-    [pluginsMenu addItem:withSubmenu(@"SHA-256", sha256Menu)];
-
-    NSMenu *sha512Menu = submenu(@"SHA-512");
-    [sha512Menu addItem:item(@"Generate",                            @selector(hashSHA512Generate:),    @"")];
-    [sha512Menu addItem:item(@"Generate from Files…", @selector(hashSHA512FromFiles:), @"")];
-    [sha512Menu addItem:item(@"Generate from Selection into Clipboard", @selector(hashSHA512ToClipboard:), @"")];
-    [pluginsMenu addItem:withSubmenu(@"SHA-512", sha512Menu)];
 
     addSep(pluginsMenu);
     [pluginsMenu addItem:item(@"Plugins Admin…",       @selector(showPluginsAdmin:),  @"")];
