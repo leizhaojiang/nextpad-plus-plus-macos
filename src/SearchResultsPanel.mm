@@ -20,6 +20,10 @@ enum { searchHeaderLevel = SC_FOLDLEVELBASE, fileHeaderLevel, resultLevel };
 struct _SRLineInfo {
     std::string filePath;
     int lineNumber;       // 1-based, 0 = header line
+    // Bytes cut off this line for the display buffer (see addResults:). Kept so
+    // copy operations can paste the whole line back — the panel used to lose the
+    // tail, so select-all + copy only produced the truncated text.
+    std::string tailUTF8;
 };
 
 // ── SearchResultsPanel ───────────────────────────────────────────────────────
@@ -680,17 +684,21 @@ static sptr_t _srSciColor(NSColor *c) {
             NSUInteger budget = kSearchResultLineBufferMax - 4;
             NSUInteger allowedTextBytes = budget > prefixBytes ? budget - prefixBytes : 0;
 
-            NSString *text = r.lineText ?: @"";
-            NSUInteger textBytes = [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+            NSString *fullText = r.lineText ?: @"";
+            NSString *text = fullText;
+            NSString *cutTail = nil;
+            NSUInteger textBytes = [fullText lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
             if (textBytes > allowedTextBytes) {
-                NSUInteger end = text.length;
+                NSUInteger end = fullText.length;
                 while (textBytes > allowedTextBytes && end > 0) {
-                    NSRange last = [text rangeOfComposedCharacterSequenceAtIndex:end - 1];
-                    textBytes -= [[text substringWithRange:last]
+                    NSRange last = [fullText rangeOfComposedCharacterSequenceAtIndex:end - 1];
+                    textBytes -= [[fullText substringWithRange:last]
                                      lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
                     end = last.location;
                 }
-                text = [text substringToIndex:end];
+                // Keep the cut tail so ⌘C / Copy Line(s) paste the full line.
+                cutTail = [fullText substringFromIndex:end];
+                text = [fullText substringToIndex:end];
             }
 
             NSString *resultLine = [NSString stringWithFormat:@"%@\n", text];
@@ -724,6 +732,7 @@ static sptr_t _srSciColor(NSColor *c) {
             _SRLineInfo lineInfo = {};
             lineInfo.filePath = r.filePath.UTF8String ?: "";
             lineInfo.lineNumber = (int)r.lineNumber;
+            lineInfo.tailUTF8 = cutTail.UTF8String ?: "";
             _lineInfos.push_back(lineInfo);
         }
     }
@@ -900,7 +909,21 @@ static sptr_t _srSciColor(NSColor *c) {
 
 /// Get text of a single line, or nil if line is hidden or empty.
 - (NSString *)_visibleLineText:(sptr_t)line {
-    if (![_sci message:SCI_GETLINEVISIBLE wParam:(uptr_t)line]) return nil;
+    return [self _lineText:line requireVisible:YES];
+}
+
+/// Line text with the display truncation undone: everything shown in the panel
+/// plus the tail addResults: kept aside. Header lines have no tail.
+- (NSString *)_fullLineTextForLine:(sptr_t)line displayText:(NSString *)display {
+    if (line >= 0 && (size_t)line < _lineInfos.size() && !_lineInfos[line].tailUTF8.empty()) {
+        NSString *tail = [NSString stringWithUTF8String:_lineInfos[line].tailUTF8.c_str()];
+        if (tail.length) return [display stringByAppendingString:tail];
+    }
+    return display;
+}
+
+- (NSString *)_lineText:(sptr_t)line requireVisible:(BOOL)requireVisible {
+    if (requireVisible && ![_sci message:SCI_GETLINEVISIBLE wParam:(uptr_t)line]) return nil;
     sptr_t linePos = [_sci message:SCI_POSITIONFROMLINE wParam:(uptr_t)line];
     sptr_t lineEndPos = [_sci message:SCI_GETLINEENDPOSITION wParam:(uptr_t)line];
     sptr_t len = lineEndPos - linePos;
@@ -913,7 +936,7 @@ static sptr_t _srSciColor(NSColor *c) {
     [_sci message:SCI_GETTEXTRANGEFULL wParam:0 lParam:(sptr_t)&tr];
     NSString *text = [NSString stringWithUTF8String:buf] ?: @"";
     free(buf);
-    return text;
+    return [self _fullLineTextForLine:line displayText:text];
 }
 
 - (void)_copy:(id)sender {
@@ -924,6 +947,27 @@ static sptr_t _srSciColor(NSColor *c) {
     sptr_t selStart = [_sci message:SCI_GETSELECTIONSTART];
     sptr_t selEnd   = [_sci message:SCI_GETSELECTIONEND];
     if (selEnd > selStart) {
+        // A selection covering whole lines (select all, or a line-wise drag) is
+        // rebuilt line by line so truncated result lines paste their full text;
+        // a partial selection keeps the exact selected characters. Only *visible*
+        // lines are copied: after "Find in these search results…" filtered the
+        // view, select-all must not drag the hidden lines back in.
+        sptr_t selFirstLine = [_sci message:SCI_LINEFROMPOSITION wParam:(uptr_t)selStart];
+        sptr_t selLastLine  = [_sci message:SCI_LINEFROMPOSITION wParam:(uptr_t)selEnd];
+        sptr_t firstLinePos = [_sci message:SCI_POSITIONFROMLINE wParam:(uptr_t)selFirstLine];
+        sptr_t lastLineEnd  = [_sci message:SCI_GETLINEENDPOSITION wParam:(uptr_t)selLastLine];
+        if (selStart == firstLinePos && selEnd >= lastLineEnd) {
+            NSMutableString *whole = [NSMutableString string];
+            for (sptr_t line = selFirstLine; line <= selLastLine; line++) {
+                NSString *text = [self _lineText:line requireVisible:YES];
+                if (text) [whole appendFormat:@"%@\n", text];
+            }
+            if (whole.length > 0) {
+                [[NSPasteboard generalPasteboard] clearContents];
+                [[NSPasteboard generalPasteboard] setString:whole forType:NSPasteboardTypeString];
+                return;
+            }
+        }
         NSString *selected = _sci.selectedString;
         if (selected.length) {
             [[NSPasteboard generalPasteboard] clearContents];
@@ -968,11 +1012,12 @@ static sptr_t _srSciColor(NSColor *c) {
         NSString *lineText = [self _visibleLineText:line];
         if (!lineText) continue;
 
-        // Include result lines (tab-prefixed) with their line numbers
-        if ([lineText hasPrefix:@"\t"]) {
-            // Remove leading tab, keep "Line NNN: content"
-            [result appendFormat:@"%@\n", [lineText substringFromIndex:1]];
-        }
+        // Result lines only (skip the search/file headers); the line kind is the
+        // source of truth — the old "\t" test silently matched nothing once the
+        // prefix was dropped.
+        if ((size_t)line >= _lineKinds.size() ||
+            _lineKinds[(size_t)line] != SearchResultLineKindResult) continue;
+        [result appendFormat:@"%@\n", lineText];
     }
 
     if (result.length > 0) {
