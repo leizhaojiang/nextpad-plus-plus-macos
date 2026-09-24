@@ -4,9 +4,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Nextpad++</string>
+    <string>Notepad++</string>
     <key>CFBundleDisplayName</key>
-    <string>Nextpad++</string>
+    <string>Notepad++</string>
     <key>CFBundleIdentifier</key>
     <string>org.nextpadplusplus.mac</string>
     <key>CFBundleVersion</key>
@@ -18,7 +18,7 @@
     <key>CFBundleSignature</key>
     <string>????</string>
     <key>CFBundleExecutable</key>
-    <string>Nextpad++</string>
+    <string>Notepad++</string>
     <key>NSPrincipalClass</key>
     <string>NppApplication</string>
     <key>CFBundleIconFile</key>
@@ -30,21 +30,21 @@
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
     <key>NSDownloadsFolderUsageDescription</key>
-    <string>Nextpad++ needs access to open and edit files in Downloads.</string>
+    <string>Notepad++ needs access to open and edit files in Downloads.</string>
     <key>NSDesktopFolderUsageDescription</key>
-    <string>Nextpad++ needs access to open and edit files on Desktop.</string>
+    <string>Notepad++ needs access to open and edit files on Desktop.</string>
     <key>NSDocumentsFolderUsageDescription</key>
-    <string>Nextpad++ needs access to open and edit files in Documents.</string>
+    <string>Notepad++ needs access to open and edit files in Documents.</string>
     <key>NSRemovableVolumesUsageDescription</key>
-    <string>Nextpad++ needs access to open and edit files on external drives.</string>
+    <string>Notepad++ needs access to open and edit files on external drives.</string>
     <!-- File-type associations.
          LSHandlerRank=Alternate means we appear in right-click → Open With…
          submenu but never automatically take over a file type a user already
-         has a default for. Bumping to Default in v1.0.7 will turn on Nextpad++
+         has a default for. Bumping to Default in v1.0.7 will turn on Notepad++
          doc-icon overlay (CotEditor pattern) — see the rebrand notes.
          TypeScript (.ts) is intentionally OMITTED: Apple's UTI for it is
          public.mpeg-2-transport-stream (a video format), so listing it would
-         advertise Nextpad++ as a video opener.
+         advertise Notepad++ as a video opener.
     -->
     <key>CFBundleDocumentTypes</key>
     <array>
@@ -127,24 +127,24 @@
             </array>
         </dict>
     </array>
-    <!-- Finder right-click "Open with Nextpad++" (issue #126).
+    <!-- Finder right-click "Open with Notepad++" (issue #126).
          A macOS Service (not a Finder Sync extension): NSRequiredContext
          NSTextContent=FilePath makes macOS surface it inline at the bottom of
          the Finder context menu when files/folders are selected. Handled by
          AppDelegate openFilesService:userData:error:; NSPortName matches
-         CFBundleName/CFBundleExecutable ("Nextpad++"). -->
+         CFBundleName/CFBundleExecutable ("Notepad++"). -->
     <key>NSServices</key>
     <array>
         <dict>
             <key>NSMenuItem</key>
             <dict>
                 <key>default</key>
-                <string>Open with Nextpad++</string>
+                <string>Open with Notepad++</string>
             </dict>
             <key>NSMessage</key>
             <string>openFilesService</string>
             <key>NSPortName</key>
-            <string>Nextpad++</string>
+            <string>Notepad++</string>
             <key>NSRequiredContext</key>
             <dict>
                 <key>NSTextContent</key>
