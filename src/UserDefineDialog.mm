@@ -14,7 +14,12 @@
 #pragma mark — Helpers
 
 static NSTextField *L(NSString *t) {
-    NSTextField *f = [NSTextField labelWithString:t]; f.font = [NSFont systemFontOfSize:11]; return f;
+    // Every label in this dialog goes through here (or groupBox/chk/stylerBtn), so
+    // translating in the helpers covers the whole dialog. The nativeLang files
+    // carry the Windows UDL dialog's wording ("Open:", "Default style",
+    // "Folding in code 1 style", …) and translate: matches by English title.
+    NSString *s = [[NppLocalizer shared] translate:t];
+    NSTextField *f = [NSTextField labelWithString:s]; f.font = [NSFont systemFontOfSize:11]; return f;
 }
 
 /// Multi-line text field (NSTextView in scroll view) — used for ALL UDL input fields.
@@ -56,10 +61,10 @@ static NSString *getText(NSScrollView *sv) {
 }
 
 static NSButton *stylerBtn(id tgt, SEL a) {
-    return [NSButton buttonWithTitle:@"Styler" target:tgt action:a];
+    return [NSButton buttonWithTitle:[[NppLocalizer shared] translate:@"Styler"] target:tgt action:a];
 }
 static NSButton *chk(NSString *t) {
-    return [NSButton checkboxWithTitle:t target:nil action:nil];
+    return [NSButton checkboxWithTitle:[[NppLocalizer shared] translate:t] target:nil action:nil];
 }
 
 /// Scrollable tab content: wraps a flipped content view of given height in a scroll view
@@ -91,7 +96,11 @@ static NSView *scrollableTab(NSTabViewItem *tab, CGFloat contentHeight) {
 /// NSBox group with titled border. Returns the box; add subviews to box.contentView.
 static NSBox *groupBox(NSString *title, CGFloat x, CGFloat y, CGFloat w, CGFloat h) {
     NSBox *b = [[NSBox alloc] initWithFrame:NSMakeRect(x, y, w, h)];
-    b.title = title; b.titlePosition = NSAtTop; b.autoresizingMask = NSViewWidthSizable;
+    // Title translates through nativeLang when the Windows dialog has the same
+    // wording ("Default style" → 默认格式设置); data titles (UDL/language names)
+    // find no entry and fall back to the original string.
+    b.title = [[NppLocalizer shared] translate:title];
+    b.titlePosition = NSAtTop; b.autoresizingMask = NSViewWidthSizable;
     return b;
 }
 
@@ -269,7 +278,7 @@ static void addFoldFields(NSBox *box, NSScrollView **oO, NSScrollView **oM, NSSc
     link.editable = NO; link.bordered = NO; link.drawsBackground = NO;
     link.allowsEditingTextAttributes = YES; link.selectable = YES;
     NSMutableAttributedString *linkStr = [[NSMutableAttributedString alloc]
-        initWithString:@"User Defined Languages online help"
+        initWithString:[loc translate:@"User Defined Languages online help"]
             attributes:@{
                 NSFontAttributeName: [NSFont systemFontOfSize:11],
                 NSForegroundColorAttributeName: [NSColor linkColor],

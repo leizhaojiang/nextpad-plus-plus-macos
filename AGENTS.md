@@ -51,6 +51,7 @@ Both big controllers have `#pragma mark` section maps — use them instead of re
 - New menu command: `target:nil` item in `MenuBuilder`; implement the selector on `EditorView` (document-scoped) or `MainWindowController` (window-scoped).
 - Shortcut mapping: always go through `NppApplyShortcutToMenuItem` — four callers share it by design.
 - Localization: menus are translated in place; match by tag or stashed English title, never by the localized string. macOS↔Windows wording aliases live in `NppLocalizer.mm`.
+- Localization of new UI: build labels through `[[NppLocalizer shared] translate:…]` **in shared helpers** where a window has them (e.g. `UserDefineDialog`'s `L`/`groupBox`/`chk`/`stylerBtn`). `translate:` matches by normalized English title, so any wording that also exists in the Windows nativeLang files translates automatically; macOS-only wording finds no entry and falls back to English (no mechanism yet — see `docs/PROJECT_SCAN.md` §5.12 for the inventory).
 - New UI language: XML into `resources/localization/` + BCP-47 code in `NPP_BUNDLE_LANGUAGES` (`CMakeLists.txt`).
 - Sessions/backups: `session.plist` and `backup/` are app-scoped — save once per quit via `AppDelegate`; allocate backup names through `EditorView uniqueBackupPathInDirectory:`.
 
